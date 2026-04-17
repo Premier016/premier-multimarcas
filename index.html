@@ -1,0 +1,1006 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8"/>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0"/>
+  <meta name="theme-color" content="#CC1A1A"/>
+  <meta name="apple-mobile-web-app-capable" content="yes"/>
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent"/>
+  <meta name="apple-mobile-web-app-title" content="Premier"/>
+  <meta name="application-name" content="Premier Multimarcas"/>
+  <title>Premier Multimarcas</title>
+  <link rel="manifest" href="manifest.json"/>
+  <link rel="apple-touch-icon" href="icon.png"/>
+  <script src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
+  <script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+  <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body { background: #060606; font-family: system-ui, sans-serif; }
+    #root { min-height: 100vh; }
+  </style>
+</head>
+<body>
+  <div id="root"></div>
+  <script type="text/babel">
+    const { useState, useEffect, useRef } = React;
+
+
+
+const LOGO = "data:image/jpeg;base64,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HC3uBHcP2ep+sSsrVXVws1JYj82cWvVuj2iT9Xp9BTrrvblGL8U2034fHucVR1095jlrjbfzfSSvLqdgeXEt94+fQ9wXc1hJV0npxKMFoI7hha71pqmmsr5KO3uEtf0klHNsPkPF32e1bzksHyKUnJuT7TpvWqaWyT+j9kamcfTDX7RH5Hkcny7lgwcSIqaWORtsLy1wdh02Ohz+qqQ5xe4ucSXE5JPevihx5Lp/nGBeSbcME/7b/tR3ESPPq20++f8A7VS0VyMllu+uquvjEVNGKFmcl0biXu9rvD2LLpuI07IgJ6KKaUDG9rizPtGD8lT0UGS6DiU/vtzD/vT+C+jiU4H/AEaz/mn8FSkVyyE1ftV1l+aIpNsNM07hDH0z4k96hURQBERAEREAREQBERAEREAREQBERAEREAREQBERAEREAREQBERAfWuLHBzSWuByCOoW0tEcTGz7KG8yBknJsdY7kHeT/P8Aa+PitWIhU8HpraRzHtBHeqzqTRNNeKgV1FM613dh3Nqoct3H9rHPPmOftWu9IcRazTwZS1W6stw6MJ9eP90/ceXsW2LZdqW9UbaqimbPCeRI5Fp8HDuKvMyT7iO0zoulsEhrJ5HXG6yEufVzc8E9duftPNWQcg5ziGtAJLnHAA7ySo263ujsNGamumEEf1R1c8+DR3lai1hxCrNS7qaHNJbgf5lp5yebz3+zornALDrbidubLQWWTkfVkrW8ifEM/vfDxWsiSTk8yiLExbyEREIEREAREQBERAEREAREQBERAEREAREQBERAEREAREQBERAEREAREQBERAEREAREQBERAFn2a+VtgrG1NFMYZByI6tePBw7wsBEBm3e81d8rX1VbM6aV3j0aPADuHksJEQBERAEREAREQBERAEREAREQBERAEREAREQBERAEREAREQBERAEREAREQBERAEREAREQBERAEREAREQBERAEREAREQBERAEREAREQBERAEREAREQBERAEREB/9k=";
+
+// ═══ SUPABASE UPLOAD ═══════════════════════════════════════════
+async function sbUpload(sbUrl, sbKey, file, carId, type) {
+  const path = `${carId}/${type}-${Date.now()}-${encodeURIComponent(file.name)}`;
+  const res = await fetch(`${sbUrl}/storage/v1/object/premier-media/${path}`, {
+    method: "POST",
+    headers: { "Authorization": `Bearer ${sbKey}`, "Content-Type": file.type, "x-upsert": "true" },
+    body: file,
+  });
+  if (!res.ok) { const e = await res.json(); throw new Error(e.message || "Upload falhou"); }
+  return { url: `${sbUrl}/storage/v1/object/public/premier-media/${path}`, name: file.name, type, uploadedAt: new Date().toISOString() };
+}
+
+// ═══ SUPABASE CONFIG ═══════════════════════════════════════════
+const SB_URL = "https://vjmmobduzchqnjrskffk.supabase.co";
+const SB_KEY = "sb_publishable_EqUQ_sllkILr6LLP1lYKRQ_Uz7-Xpoh";
+
+// ═══ SHARED DATA SYNC (Supabase Storage) ════════════════════════
+async function sbSaveData(data) {
+  try {
+    const json = JSON.stringify(data);
+    await fetch(`${SB_URL}/storage/v1/object/premier-media/app-data.json`, {
+      method: "POST",
+      headers: { "Authorization": `Bearer ${SB_KEY}`, "Content-Type": "application/json", "x-upsert": "true" },
+      body: json,
+    });
+  } catch(e) { console.error("Sync error:", e); }
+}
+
+async function sbLoadData() {
+  try {
+    const r = await fetch(`${SB_URL}/storage/v1/object/public/premier-media/app-data.json?t=${Date.now()}`);
+    if (r.ok) return await r.json();
+  } catch {}
+  return null;
+}
+
+// ═══ CONSTANTS ══════════════════════════════════════════════════
+const C = {
+  bg: "#060606", card: "#0F0F0F", cardHover: "#161616",
+  border: "#252525", borderLight: "#333",
+  red: "#CC1A1A", redLight: "#E53535",
+  text: "#F0F0F0", textMuted: "#9A9A9A", textDim: "#444",
+  success: "#10B981", warning: "#F59E0B", error: "#EF4444", info: "#3B82F6",
+};
+
+const CRED = {
+  proprietario: { pass: "premier123", role: "proprietario", name: "Proprietário" },
+  gerente:      { pass: "premier123", role: "gerente",      name: "Gerente" },
+  preparacao:   { pass: "premier123", role: "preparacao",   name: "Resp. Preparação" },
+  funcionario:  { pass: "premier123", role: "funcionario",  name: "Funcionário" },
+};
+const ROLE_LABEL = {
+  proprietario: "👑 Proprietário", gerente: "⭐ Gerente",
+  preparacao: "🔧 Resp. Preparação", funcionario: "👤 Funcionário",
+};
+const CAN = {
+  financial:  r => ["proprietario","gerente"].includes(r),
+  seeCusto:   r => r === "proprietario",
+  approve:    r => ["proprietario","gerente","preparacao"].includes(r),
+  delete:     r => ["proprietario","gerente"].includes(r),
+  suppliers:  r => ["proprietario","gerente"].includes(r),
+  setupSb:    r => r === "proprietario",
+};
+
+const CATS = {
+  funilaria:  { label:"Funilaria",        icon:"⚒️", col:"#E85D04", items:["Amassados dianteiros","Amassados traseiros","Amassados nas portas","Riscos e arranhões","Ferrugem","Pintura oxidada","Para-choque dianteiro","Para-choque traseiro","Soleiras","Teto","Retrovisores externos","Colunas/pilares"] },
+  tapeçaria:  { label:"Tapeçaria",        icon:"🪑", col:"#9333EA", items:["Banco dianteiro esq.","Banco dianteiro dir.","Bancos traseiros","Forro do teto","Tapetes","Revestimento porta diant. esq.","Revestimento porta diant. dir.","Revestimento portas traseiras","Cintos de segurança","Painel frontal"] },
+  mecanica:   { label:"Mecânica",         icon:"⚙️", col:"#2563EB", items:["Motor","Câmbio","Embreagem","Sistema elétrico geral","Bateria","Alternador","Velas de ignição","Filtros (ar/óleo/combustível)","Correia dentada","Radiador e mangueiras","Ar-condicionado compressor","Direção hidráulica"] },
+  suspensao:  { label:"Suspensão",        icon:"🔧", col:"#059669", items:["Amortecedor diant. esq.","Amortecedor diant. dir.","Amortecedor tras. esq.","Amortecedor tras. dir.","Molas","Buchas bandeja","Pivôs","Barra estabilizadora","Terminais de direção","Coxins"] },
+  freios:     { label:"Freios",           icon:"🛑", col:"#DC2626", items:["Pastilha diant. esq.","Pastilha diant. dir.","Pastilha tras. esq.","Pastilha tras. dir.","Disco diant. esq.","Disco diant. dir.","Disco tras. esq.","Disco tras. dir.","Fluido de freio","Freio de mão","Mangotes e conexões"] },
+  pneusRodas: { label:"Pneus e Rodas",   icon:"⭕", col:"#B45309", items:["Pneu dianteiro esq.","Pneu dianteiro dir.","Pneu traseiro esq.","Pneu traseiro dir.","Estepe","Rodas/Aros","Calotas","Calibragem","Alinhamento","Balanceamento"] },
+  manutencao: { label:"Manutenção Geral",icon:"🔩", col:"#4B5563", items:["Troca de óleo","Revisão geral","Fluido de direção","Fluido do câmbio","Palhetas","Lâmpadas externas","Lâmpadas internas","Scanner/Diagnóstico","Extintor / documentação"] },
+  interna:    { label:"Parte Interna",   icon:"🏠", col:"#7C3AED", items:["Painel de instrumentos","Central multimídia","Ar-cond. interno","Vidros elétricos","Travas elétricas","Volante","Acabamentos internos","Porta-luvas","Console central","Retrovisor interno"] },
+  estetica:   { label:"Estética",        icon:"✨", col:"#0891B2", items:["Lavagem externa","Lavagem interna","Higienização completa","Polimento","Cristalização","Limpeza do motor","Renovação de plásticos","Detalhamento","Remoção de odores"] },
+};
+
+const STATUSES = ["Entrada","Em Preparação","Aguardando Aprovação","Pronto para Venda","Vendido"];
+const ST_COL = { "Entrada":"#6B7280","Em Preparação":"#3B82F6","Aguardando Aprovação":"#F59E0B","Pronto para Venda":"#10B981","Vendido":"#8B5CF6" };
+const IT_COL = { pendente:"#EF4444","em andamento":"#F59E0B",concluído:"#10B981" };
+const IT_LBL = { pendente:"Pendente","em andamento":"Em andamento",concluído:"Concluído" };
+const ORIGENS = ["Pessoa Física","Leilão","Consignado"];
+const FORN_TIPOS = ["Funilaria","Mecânica","Tapeçaria","Auto Elétrica","Pneus/Rodas","Estética","Outros"];
+
+const fmt = v => (!v && v!==0) ? "R$ —" : "R$ "+Number(v).toLocaleString("pt-BR",{minimumFractionDigits:2});
+const daysSince = d => d ? Math.floor((Date.now()-new Date(d).getTime())/86400000) : 0;
+const dayColor = d => d<=30 ? C.success : d<=60 ? C.warning : C.error;
+const addMonths = (d,n) => { const x=new Date(d); x.setMonth(x.getMonth()+n); return x.toISOString().split("T")[0]; };
+
+function createCar(id, by) {
+  const cats = {};
+  Object.keys(CATS).forEach(k => { cats[k] = { items: CATS[k].items.map(n=>({name:n,status:"pendente",obs:"",fornecedor:""})), obs:"" }; });
+  return { id, name:"", plate:"", year:"", color:"", km:"", origem:"Pessoa Física",
+    consignadoNome:"", consignadoCPF:"", consignadoTel:"", consignadoValor:"", consignadoPrazo:"",
+    leilaoLote:"", leilaoData:"", leilaoTaxas:"",
+    status:"Entrada", createdAt:new Date().toISOString(), createdBy:by,
+    aprovadoPor:"", aprovadoEm:"", dataVenda:"", garantiaAte:"",
+    vendedor:"", comissaoValor:"", formaPagamento:"", bancoFinanciamento:"",
+    comprador:"", compradorTel:"",
+    ...cats, fotos:[], videos:[], mediaObs:"",
+    valorPago:"", despesas:[], tabelaFipe:"", precoVenda:"" };
+}
+
+// ═══ UI ═════════════════════════════════════════════════════════
+function Btn({children,onClick,style:s,variant="primary",small,disabled}){
+  const V={primary:{background:C.red,color:"#fff"},ghost:{background:"transparent",color:C.textMuted,border:`1px solid ${C.border}`},danger:{background:"#7F1D1D",color:"#FCA5A5",border:`1px solid #DC262633`},success:{background:"#064E3B",color:"#6EE7B7",border:`1px solid #10B98155`},info:{background:"#1E3A5F",color:"#93C5FD",border:`1px solid #3B82F633`}};
+  return <button onClick={disabled?undefined:onClick} style={{padding:small?"5px 12px":"9px 18px",borderRadius:7,border:"none",cursor:disabled?"not-allowed":"pointer",fontFamily:"inherit",fontSize:small?11:13,fontWeight:600,transition:"all 0.15s",display:"inline-flex",alignItems:"center",gap:5,letterSpacing:.3,opacity:disabled?.5:1,...V[variant],...s}}>{children}</button>;
+}
+function Badge({label,col}){return <span style={{background:col+"22",color:col,border:`1px solid ${col}55`,borderRadius:20,padding:"2px 10px",fontSize:10,fontWeight:700,letterSpacing:.5,whiteSpace:"nowrap"}}>{label}</span>;}
+function Inp({label,value,onChange,type="text",placeholder,disabled}){
+  return(<div style={{display:"flex",flexDirection:"column",gap:4}}>
+    {label&&<label style={{fontSize:10,color:C.textMuted,fontWeight:600,letterSpacing:.8,textTransform:"uppercase"}}>{label}</label>}
+    <input type={type} value={value||""} onChange={e=>onChange(e.target.value)} placeholder={placeholder} disabled={disabled}
+      style={{background:"#040406",border:`1px solid ${C.border}`,borderRadius:7,padding:"9px 11px",color:C.text,fontSize:13,fontFamily:"inherit",outline:"none",width:"100%",opacity:disabled?.5:1}}
+      onFocus={e=>e.target.style.borderColor=C.red} onBlur={e=>e.target.style.borderColor=C.border}/>
+  </div>);
+}
+function Sel({label,value,onChange,options}){
+  return(<div style={{display:"flex",flexDirection:"column",gap:4}}>
+    {label&&<label style={{fontSize:10,color:C.textMuted,fontWeight:600,letterSpacing:.8,textTransform:"uppercase"}}>{label}</label>}
+    <select value={value||""} onChange={e=>onChange(e.target.value)}
+      style={{background:"#040406",border:`1px solid ${C.border}`,borderRadius:7,padding:"9px 11px",color:value?C.text:C.textMuted,fontSize:13,fontFamily:"inherit",outline:"none",width:"100%",cursor:"pointer"}}
+      onFocus={e=>e.target.style.borderColor=C.red} onBlur={e=>e.target.style.borderColor=C.border}>
+      {options.map(o=><option key={o.v||o} value={o.v||o} style={{background:C.card,color:C.text}}>{o.l||o}</option>)}
+    </select>
+  </div>);
+}
+function Txta({label,value,onChange,rows=3,placeholder}){
+  return(<div style={{display:"flex",flexDirection:"column",gap:4}}>
+    {label&&<label style={{fontSize:10,color:C.textMuted,fontWeight:600,letterSpacing:.8,textTransform:"uppercase"}}>{label}</label>}
+    <textarea value={value||""} onChange={e=>onChange(e.target.value)} rows={rows} placeholder={placeholder}
+      style={{background:"#040406",border:`1px solid ${C.border}`,borderRadius:7,padding:"9px 11px",color:C.text,fontSize:13,fontFamily:"inherit",outline:"none",width:"100%",resize:"vertical"}}
+      onFocus={e=>e.target.style.borderColor=C.red} onBlur={e=>e.target.style.borderColor=C.border}/>
+  </div>);
+}
+function Modal({title,onClose,children,width=640}){
+  return(
+    <div style={{position:"fixed",inset:0,background:"#000c",zIndex:999,display:"flex",alignItems:"center",justifyContent:"center",padding:20}} onClick={e=>e.target===e.currentTarget&&onClose()}>
+      <div style={{background:C.card,border:`1px solid ${C.border}`,borderRadius:14,width:"100%",maxWidth:width,maxHeight:"90vh",overflow:"auto",boxShadow:"0 24px 60px #000a"}}>
+        <div style={{padding:"18px 22px",borderBottom:`1px solid ${C.border}`,display:"flex",justifyContent:"space-between",alignItems:"center",position:"sticky",top:0,background:C.card,zIndex:10}}>
+          <div style={{fontWeight:700,fontSize:15,color:C.red}}>{title}</div>
+          <button onClick={onClose} style={{background:"none",border:"none",color:C.textMuted,cursor:"pointer",fontSize:20,lineHeight:1}}>✕</button>
+        </div>
+        <div style={{padding:22}}>{children}</div>
+      </div>
+    </div>
+  );
+}
+
+// ═══ SETUP ══════════════════════════════════════════════════════
+function SetupScreen({onSave,onBack}){
+  const [url,setUrl]=useState(""); const [key,setKey]=useState(""); const [err,setErr]=useState(""); const [testing,setTesting]=useState(false);
+  useEffect(()=>{
+    async function load(){try{const d=await window.storage.get("premier_sb_draft");if(d){const p=JSON.parse(d.value);setUrl(p.url||"");setKey(p.key||"");}}catch{}}
+    load();
+  },[]);
+  async function upUrl(v){setUrl(v);try{await window.storage.set("premier_sb_draft",JSON.stringify({url:v,key}));}catch{}}
+  async function upKey(v){setKey(v);try{await window.storage.set("premier_sb_draft",JSON.stringify({url,key:v}));}catch{}}
+  async function handle(){
+    if(!url.trim()||!key.trim()){setErr("Preencha os dois campos.");return;}
+    if(!url.trim().startsWith("https")){setErr("URL inválida. Deve começar com https://");return;}
+    try{await window.storage.delete("premier_sb_draft");}catch{}
+    onSave({url:url.trim().replace(/\/+$/,""),key:key.trim()});
+  }
+  return(
+    <div style={{minHeight:"100vh",background:C.bg,display:"flex",alignItems:"center",justifyContent:"center",padding:24}}>
+      <div style={{width:"100%",maxWidth:520}}>
+        <div style={{textAlign:"center",marginBottom:36}}>
+          <img src={LOGO} alt="Premier" style={{width:200,objectFit:"contain"}}/>
+          <div style={{marginTop:14,fontSize:17,fontWeight:700,color:C.text}}>Configuração do Supabase</div>
+          <div style={{marginTop:6,fontSize:12,color:C.textMuted}}>Para ativar upload de fotos e vídeos</div>
+        </div>
+        <div style={{background:C.card,border:`1px solid ${C.border}`,borderRadius:14,padding:30,display:"flex",flexDirection:"column",gap:18}}>
+          <div style={{background:"#1a1000",border:`1px solid ${C.warning}44`,borderRadius:9,padding:13,fontSize:12,color:C.warning,lineHeight:1.8}}>
+            <b style={{display:"block",marginBottom:4}}>📋 Antes de configurar:</b>
+            <div>1. No Supabase → <b style={{color:C.text}}>Armazenamento</b> → clique em <b style={{color:C.text}}>Novo bucket</b></div>
+            <div>2. Nome do bucket: <b style={{color:C.text}}>premier-media</b> → marque <b style={{color:C.text}}>Bucket público</b></div>
+            <div>3. Vá em <b style={{color:C.text}}>Configurações do projeto → API</b> e copie as credenciais abaixo</div>
+          </div>
+          <Inp label="URL do projeto" value={url} onChange={upUrl} placeholder="https://xxxxxxxx.supabase.co"/>
+          <Inp label="Chave publicável (anon)" value={key} onChange={upKey} placeholder="eyJhbGci..."/>
+          {err&&<div style={{color:C.error,fontSize:12,background:"#7F1D1D22",border:`1px solid ${C.error}33`,borderRadius:7,padding:"8px 11px"}}>{err}</div>}
+          <div style={{display:"flex",gap:10}}>
+            {onBack&&<Btn onClick={onBack} variant="ghost" style={{flex:1,justifyContent:"center"}}>Voltar</Btn>}
+            <Btn onClick={handle}  style={{flex:2,justifyContent:"center"}}>"✓ Salvar e Ativar"</Btn>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ═══ LOGIN ══════════════════════════════════════════════════════
+function LoginScreen({onLogin,passwords={}}){
+  const [u,setU]=useState(""); const [p,setP]=useState(""); const [err,setErr]=useState("");
+  function handle(){
+    const uname=u.toLowerCase().trim();
+    const c=CRED[uname];
+    const pw=passwords?passwords[uname]:null;
+    if(c&&(p===(pw||c.pass))) onLogin({username:u,...c}); else setErr("Usuário ou senha inválidos");
+  }
+  return(
+    <div style={{minHeight:"100vh",background:C.bg,display:"flex",alignItems:"center",justifyContent:"center",padding:24}}>
+      <div style={{width:"100%",maxWidth:400}}>
+        <div style={{textAlign:"center",marginBottom:34}}>
+          <img src={LOGO} alt="Premier Multimarcas" style={{width:230,objectFit:"contain",filter:"drop-shadow(0 4px 20px rgba(204,26,26,.35))"}}/>
+          <div style={{color:C.textMuted,fontSize:10,letterSpacing:4,marginTop:8,textTransform:"uppercase"}}>Gestão de Veículos</div>
+          <div style={{width:50,height:2,background:`linear-gradient(90deg,transparent,${C.red},transparent)`,margin:"10px auto 0"}}/>
+        </div>
+        <div style={{background:C.card,border:`1px solid ${C.border}`,borderRadius:14,padding:32,display:"flex",flexDirection:"column",gap:18,boxShadow:"0 24px 60px #000a"}}>
+          <Inp label="Usuário" value={u} onChange={setU} placeholder="proprietario / gerente / preparacao / funcionario"/>
+          <Inp label="Senha" value={p} onChange={setP} type="password" placeholder="••••••••"/>
+          {err&&<div style={{color:C.error,fontSize:12,textAlign:"center",background:"#7F1D1D22",border:`1px solid #DC262633`,borderRadius:7,padding:"7px 11px"}}>{err}</div>}
+          <Btn onClick={handle} style={{width:"100%",justifyContent:"center",padding:"12px 18px"}}>Entrar</Btn>
+        </div>
+        <div style={{marginTop:14,background:C.card,border:`1px solid ${C.border}`,borderRadius:10,padding:13,fontSize:11,color:C.textMuted,lineHeight:2}}>
+          <div style={{color:C.textDim,fontWeight:700,fontSize:9,letterSpacing:1,marginBottom:4}}>ACESSOS DEMO — SENHA: premier123</div>
+          {Object.entries(ROLE_LABEL).map(([k,v])=><div key={k}>{v}: <b style={{color:C.text}}>{k}</b></div>)}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ═══ DASHBOARD ══════════════════════════════════════════════════
+function Dashboard({cars,suppliers,user,onLogout,onSelectCar,onAddCar,onOpenSuppliers,onOpenSetup,onOpenChangePass,sbConfig}){
+  const [search,setSearch]=useState(""); const [fStatus,setFStatus]=useState("Todos"); const [fOrigem,setFOrigem]=useState("Todas");
+  const fil=cars.filter(c=>(fStatus==="Todos"||c.status===fStatus)&&(fOrigem==="Todas"||c.origem===fOrigem)&&((c.name||"").toLowerCase().includes(search.toLowerCase())||(c.plate||"").toLowerCase().includes(search.toLowerCase())));
+  let lucroTotal=0;
+  if(CAN.financial(user.role)) cars.filter(c=>c.status==="Vendido").forEach(c=>{
+    const pv=Number(c.precoVenda)||0; const vp=c.origem==="Consignado"?Number(c.consignadoValor)||0:Number(c.valorPago)||0;
+    const desp=(c.despesas||[]).reduce((s,d)=>s+(Number(d.valor)||0),0); const com=Number(c.comissaoValor)||0;
+    lucroTotal+=pv-vp-desp-com;
+  });
+  const stats=[
+    {l:"Total",v:cars.length,col:C.red,icon:"🚗"},
+    {l:"Em Prep.",v:cars.filter(c=>c.status==="Em Preparação").length,col:"#3B82F6",icon:"🔧"},
+    {l:"Aguard. Aprov.",v:cars.filter(c=>c.status==="Aguardando Aprovação").length,col:"#F59E0B",icon:"⏳"},
+    {l:"Prontos",v:cars.filter(c=>c.status==="Pronto para Venda").length,col:"#10B981",icon:"✅"},
+    {l:"Vendidos",v:cars.filter(c=>c.status==="Vendido").length,col:"#8B5CF6",icon:"🤝"},
+  ];
+  return(
+    <div style={{minHeight:"100vh",background:C.bg,display:"flex",flexDirection:"column"}}>
+      <header style={{background:C.card,borderBottom:`1px solid ${C.border}`,padding:"11px 18px",display:"flex",alignItems:"center",justifyContent:"space-between",position:"sticky",top:0,zIndex:100}}>
+        <div style={{display:"flex",alignItems:"center",gap:12}}>
+          <img src={LOGO} alt="Premier" style={{height:42,objectFit:"contain"}}/>
+          <div style={{width:1,height:30,background:C.border}}/>
+          <div style={{fontSize:11,color:C.textMuted,letterSpacing:1}}>Painel de Controle</div>
+        </div>
+        <div style={{display:"flex",alignItems:"center",gap:9}}>
+          
+          {CAN.suppliers(user.role)&&<Btn onClick={onOpenSuppliers} variant="ghost" small>🏢 Fornecedores</Btn>}
+          {CAN.financial(user.role)&&<Btn onClick={onOpenChangePass} variant="ghost" small>🔑</Btn>}
+          {CAN.setupSb(user.role)&&<Btn onClick={onOpenSetup} variant="ghost" small>⚙️</Btn>}
+          <div style={{textAlign:"right"}}>
+            <div style={{fontSize:12,color:C.text,fontWeight:600}}>{user.name}</div>
+            <div style={{fontSize:9,color:C.red,letterSpacing:.5}}>{ROLE_LABEL[user.role]}</div>
+          </div>
+          <Btn onClick={onLogout} variant="ghost" small>Sair</Btn>
+        </div>
+      </header>
+      <div style={{padding:18,flex:1,maxWidth:1400,margin:"0 auto",width:"100%"}}>
+        <div style={{display:"grid",gridTemplateColumns:`repeat(${CAN.financial(user.role)?6:5},1fr)`,gap:10,marginBottom:18}}>
+          {stats.map(s=>(
+            <div key={s.l} style={{background:C.card,border:`1px solid ${C.border}`,borderRadius:11,padding:"14px 16px",display:"flex",alignItems:"center",gap:10}}>
+              <div style={{fontSize:22}}>{s.icon}</div>
+              <div><div style={{fontSize:24,fontWeight:800,color:s.col,lineHeight:1}}>{s.v}</div><div style={{fontSize:10,color:C.textMuted,marginTop:3}}>{s.l}</div></div>
+            </div>
+          ))}
+          {CAN.financial(user.role)&&(
+            <div style={{background:C.card,border:`1px solid ${C.border}`,borderRadius:11,padding:"14px 16px",display:"flex",alignItems:"center",gap:10}}>
+              <div style={{fontSize:22}}>📈</div>
+              <div><div style={{fontSize:16,fontWeight:800,color:lucroTotal>=0?C.success:C.error,lineHeight:1}}>{fmt(lucroTotal)}</div><div style={{fontSize:10,color:C.textMuted,marginTop:3}}>Lucro total</div></div>
+            </div>
+          )}
+        </div>
+        <div style={{display:"flex",gap:9,marginBottom:14,flexWrap:"wrap",alignItems:"center"}}>
+          <input placeholder="🔍  Nome ou placa..." value={search} onChange={e=>setSearch(e.target.value)}
+            style={{background:C.card,border:`1px solid ${C.border}`,borderRadius:7,padding:"8px 13px",color:C.text,fontSize:13,fontFamily:"inherit",outline:"none",flex:1,minWidth:180}}/>
+          <select value={fOrigem} onChange={e=>setFOrigem(e.target.value)} style={{background:C.card,border:`1px solid ${C.border}`,borderRadius:7,padding:"8px 12px",color:C.textMuted,fontSize:12,fontFamily:"inherit",outline:"none",cursor:"pointer"}}>
+            {["Todas",...ORIGENS].map(o=><option key={o}>{o}</option>)}
+          </select>
+          <div style={{display:"flex",gap:5,flexWrap:"wrap"}}>
+            {["Todos",...STATUSES].map(s=>(
+              <button key={s} onClick={()=>setFStatus(s)} style={{padding:"6px 11px",borderRadius:7,border:`1px solid ${fStatus===s?C.red:C.border}`,background:fStatus===s?C.red+"18":"transparent",color:fStatus===s?C.red:C.textMuted,cursor:"pointer",fontSize:11,fontFamily:"inherit",fontWeight:fStatus===s?700:400,transition:"all .15s"}}>{s}</button>
+            ))}
+          </div>
+          <Btn onClick={onAddCar}>+ Novo Veículo</Btn>
+        </div>
+        {fil.length===0?(
+          <div style={{textAlign:"center",padding:"60px 0",color:C.textMuted}}><div style={{fontSize:44}}>🚗</div><div style={{marginTop:10,fontSize:16}}>Nenhum veículo encontrado</div></div>
+        ):(
+          <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fill,minmax(290px,1fr))",gap:12}}>
+            {fil.map(car=><CarCard key={car.id} car={car} user={user} onClick={()=>onSelectCar(car)}/>)}
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+// ═══ CAR CARD ═══════════════════════════════════════════════════
+function CarCard({car,user,onClick}){
+  const [hov,setHov]=useState(false);
+  let total=0,done=0;
+  Object.keys(CATS).forEach(k=>{ if(car[k]) car[k].items.forEach(i=>{total++;if(i.status==="concluído")done++;}); });
+  const pct=total>0?Math.round((done/total)*100):0;
+  const days=daysSince(car.createdAt);
+  const dc=car.status==="Vendido"?C.textDim:dayColor(days);
+  const OI={"Pessoa Física":"👤","Leilão":"🔨","Consignado":"🤝"};
+  return(
+    <div onClick={onClick} onMouseEnter={()=>setHov(true)} onMouseLeave={()=>setHov(false)}
+      style={{background:hov?C.cardHover:C.card,border:`1px solid ${hov?C.red:C.border}`,borderRadius:13,padding:16,cursor:"pointer",transition:"all .2s",boxShadow:hov?"0 8px 30px #000a":"none"}}>
+      <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",marginBottom:10}}>
+        <div>
+          <div style={{fontWeight:700,fontSize:14,color:C.text,marginBottom:2}}>{car.name||"— Sem nome —"}</div>
+          <div style={{fontSize:11,color:C.textMuted}}>{car.plate||"Sem placa"}{car.year?` · ${car.year}`:""}{car.color?` · ${car.color}`:""}</div>
+        </div>
+        <Badge label={car.status} col={ST_COL[car.status]||C.red}/>
+      </div>
+      <div style={{display:"flex",gap:9,marginBottom:10,flexWrap:"wrap"}}>
+        <span style={{fontSize:10,color:C.textMuted}}>{OI[car.origem]||"🚗"} {car.origem}</span>
+        {car.km&&<span style={{fontSize:10,color:C.textMuted}}>🛣️ {Number(car.km).toLocaleString("pt-BR")} km</span>}
+        <span style={{fontSize:10,color:dc,fontWeight:700}}>⏱ {days}d na loja</span>
+      </div>
+      <div style={{marginBottom:8}}>
+        <div style={{display:"flex",justifyContent:"space-between",marginBottom:4}}>
+          <span style={{fontSize:10,color:C.textMuted}}>Preparação</span>
+          <span style={{fontSize:11,color:pct===100?C.success:C.red,fontWeight:700}}>{pct}%</span>
+        </div>
+        <div style={{height:4,background:C.border,borderRadius:2,overflow:"hidden"}}>
+          <div style={{height:"100%",width:`${pct}%`,background:pct===100?C.success:C.red,borderRadius:2}}/>
+        </div>
+      </div>
+      {car.fotos?.length>0&&(
+        <div style={{display:"flex",gap:3,marginTop:8,overflow:"hidden"}}>
+          {car.fotos.slice(0,4).map((f,i)=><img key={i} src={f.url} alt="" style={{width:44,height:33,objectFit:"cover",borderRadius:3,border:`1px solid ${C.border}`}}/>)}
+          {car.fotos.length>4&&<div style={{width:44,height:33,borderRadius:3,background:C.border,display:"flex",alignItems:"center",justifyContent:"center",fontSize:10,color:C.textMuted}}>+{car.fotos.length-4}</div>}
+        </div>
+      )}
+      {car.status==="Aguardando Aprovação"&&CAN.approve(user.role)&&(
+        <div style={{marginTop:9,padding:"5px 9px",background:"#F59E0B22",border:`1px solid #F59E0B44`,borderRadius:5,fontSize:10,color:"#F59E0B",fontWeight:700}}>⚠️ Aguardando sua aprovação</div>
+      )}
+      <div style={{fontSize:9,color:C.textDim,marginTop:9,paddingTop:7,borderTop:`1px solid ${C.border}`}}>Por {car.createdBy} · {new Date(car.createdAt).toLocaleDateString("pt-BR")}</div>
+    </div>
+  );
+}
+
+// ═══ ADD CAR ════════════════════════════════════════════════════
+function AddCarForm({car:init,onBack,onSave}){
+  const [car,setCar]=useState(init);
+  const up=(k,v)=>setCar(p=>({...p,[k]:v}));
+  function save(){if(!car.name.trim()||!car.plate.trim())return alert("Preencha nome e placa.");onSave(car);}
+  const origColor={"Pessoa Física":"#10B981","Leilão":"#B45309","Consignado":"#7C3AED"};
+  return(
+    <div style={{minHeight:"100vh",background:C.bg}}>
+      <header style={{background:C.card,borderBottom:`1px solid ${C.border}`,padding:"11px 18px",display:"flex",alignItems:"center",gap:11}}>
+        <Btn onClick={onBack} variant="ghost" small>← Voltar</Btn>
+        <div style={{fontSize:15,fontWeight:700,color:C.red,letterSpacing:1}}>NOVO VEÍCULO</div>
+      </header>
+      <div style={{padding:28,maxWidth:700,margin:"0 auto",display:"flex",flexDirection:"column",gap:18}}>
+        <div style={{background:C.card,border:`1px solid ${C.border}`,borderRadius:13,padding:22,display:"flex",flexDirection:"column",gap:14}}>
+          <div style={{color:C.red,fontWeight:700,fontSize:11,letterSpacing:1}}>DADOS BÁSICOS</div>
+          <Inp label="Nome do veículo *" value={car.name} onChange={v=>up("name",v)} placeholder="Ex: Honda Civic EXL 2020"/>
+          <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:12}}>
+            <Inp label="Placa *" value={car.plate} onChange={v=>up("plate",v.toUpperCase())} placeholder="ABC-1234"/>
+            <Inp label="Ano" value={car.year} onChange={v=>up("year",v)} placeholder="2020"/>
+            <Inp label="Cor" value={car.color} onChange={v=>up("color",v)} placeholder="Prata"/>
+          </div>
+          <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:12}}>
+            <Inp label="Quilometragem (km)" value={car.km} onChange={v=>up("km",v)} type="number" placeholder="45000"/>
+            <Sel label="Origem do veículo" value={car.origem} onChange={v=>up("origem",v)} options={ORIGENS}/>
+          </div>
+        </div>
+        {car.origem==="Consignado"&&(
+          <div style={{background:C.card,border:`1px solid ${origColor.Consignado}44`,borderRadius:13,padding:22,display:"flex",flexDirection:"column",gap:12}}>
+            <div style={{color:"#7C3AED",fontWeight:700,fontSize:11,letterSpacing:1}}>🤝 DADOS DO CONSIGNADO</div>
+            <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:12}}>
+              <Inp label="Nome do proprietário" value={car.consignadoNome} onChange={v=>up("consignadoNome",v)}/>
+              <Inp label="Telefone" value={car.consignadoTel} onChange={v=>up("consignadoTel",v)}/>
+              <Inp label="CPF/CNPJ" value={car.consignadoCPF} onChange={v=>up("consignadoCPF",v)}/>
+              <Inp label="Valor combinado (R$)" value={car.consignadoValor} onChange={v=>up("consignadoValor",v)} type="number"/>
+              <Inp label="Prazo do contrato" value={car.consignadoPrazo} onChange={v=>up("consignadoPrazo",v)} type="date"/>
+            </div>
+          </div>
+        )}
+        {car.origem==="Leilão"&&(
+          <div style={{background:C.card,border:`1px solid ${origColor["Leilão"]}44`,borderRadius:13,padding:22,display:"flex",flexDirection:"column",gap:12}}>
+            <div style={{color:"#B45309",fontWeight:700,fontSize:11,letterSpacing:1}}>🔨 DADOS DO LEILÃO</div>
+            <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:12}}>
+              <Inp label="Número do Lote" value={car.leilaoLote} onChange={v=>up("leilaoLote",v)}/>
+              <Inp label="Data do Leilão" value={car.leilaoData} onChange={v=>up("leilaoData",v)} type="date"/>
+              <Inp label="Taxas do Leilão (R$)" value={car.leilaoTaxas} onChange={v=>up("leilaoTaxas",v)} type="number"/>
+            </div>
+          </div>
+        )}
+        <div style={{display:"flex",gap:10,justifyContent:"flex-end"}}>
+          <Btn onClick={onBack} variant="ghost">Cancelar</Btn>
+          <Btn onClick={save}>Criar Ficha →</Btn>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ═══ CAR DETAIL ═════════════════════════════════════════════════
+function CarDetail({car:init,user,suppliers,sbConfig,onBack,onSave,onDelete}){
+  const [car,setCar]=useState(init); const [tab,setTab]=useState("overview"); const [saved,setSaved]=useState(false);
+  const up=(k,v)=>setCar(p=>({...p,[k]:v}));
+  const upCat=(k,d)=>setCar(p=>({...p,[k]:d}));
+  function save(){onSave(car);setSaved(true);setTimeout(()=>setSaved(false),2000);}
+  function approve(){const u={...car,status:"Pronto para Venda",aprovadoPor:user.name,aprovadoEm:new Date().toISOString()};setCar(u);onSave(u);}
+  function markSold(){
+    const dv=new Date().toISOString().split("T")[0];
+    const u={...car,status:"Vendido",dataVenda:dv,garantiaAte:addMonths(dv,3)};
+    setCar(u);onSave(u);
+  }
+  const days=daysSince(car.createdAt); const dc=car.status==="Vendido"?C.textDim:dayColor(days);
+  const tabs=[
+    {k:"overview",l:"📋 Geral"},
+    ...Object.entries(CATS).map(([k,v])=>({k,l:`${v.icon} ${v.label}`})),
+    {k:"media",l:"📸 Fotos/Vídeos"},
+    ...(CAN.financial(user.role)?[{k:"financeiro",l:"💰 Financeiro"}]:[]),
+    ...(car.status==="Aguardando Aprovação"&&CAN.approve(user.role)?[{k:"aprovacao",l:"✅ Aprovação"}]:[]),
+  ];
+  return(
+    <div style={{minHeight:"100vh",background:C.bg,display:"flex",flexDirection:"column"}}>
+      <header style={{background:C.card,borderBottom:`1px solid ${C.border}`,padding:"11px 16px",position:"sticky",top:0,zIndex:100}}>
+        <div style={{display:"flex",alignItems:"center",gap:8,marginBottom:9}}>
+          <Btn onClick={onBack} variant="ghost" small>← Voltar</Btn>
+          <div style={{flex:1,minWidth:0}}>
+            <div style={{fontWeight:700,fontSize:16,color:C.text,whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>{car.name||"Sem nome"}</div>
+            <div style={{fontSize:10,color:C.textMuted}}>{car.plate} · {car.year} · {car.color} · <span style={{color:dc}}>{days} dias na loja</span></div>
+          </div>
+          <select value={car.status} onChange={e=>up("status",e.target.value)}
+            style={{background:ST_COL[car.status]+"22",border:`1px solid ${ST_COL[car.status]}55`,borderRadius:7,padding:"5px 9px",color:ST_COL[car.status],fontFamily:"inherit",fontSize:11,fontWeight:700,cursor:"pointer",outline:"none"}}>
+            {STATUSES.map(s=><option key={s} value={s} style={{color:C.text,background:C.card}}>{s}</option>)}
+          </select>
+          {car.status==="Em Preparação"&&<Btn onClick={()=>up("status","Aguardando Aprovação")} variant="info" small>📤 Enviar p/ Aprovação</Btn>}
+          {car.status==="Aguardando Aprovação"&&CAN.approve(user.role)&&<Btn onClick={approve} variant="success" small>✅ Aprovar</Btn>}
+          {car.status==="Pronto para Venda"&&<Btn onClick={markSold} variant="success" small>🤝 Vendido</Btn>}
+          <Btn onClick={save} variant={saved?"success":"primary"} small>{saved?"✓ Salvo!":"💾 Salvar"}</Btn>
+          {CAN.delete(user.role)&&<Btn onClick={()=>{if(window.confirm(`Excluir "${car.name}"?`))onDelete(car.id);}} variant="danger" small>🗑</Btn>}
+        </div>
+        <div style={{display:"flex",gap:1,overflowX:"auto"}}>
+          {tabs.map(t=>(
+            <button key={t.k} onClick={()=>setTab(t.k)}
+              style={{padding:"5px 11px",borderRadius:"5px 5px 0 0",border:"none",background:tab===t.k?C.red+"20":"transparent",color:tab===t.k?C.red:C.textMuted,cursor:"pointer",fontSize:11,fontFamily:"inherit",fontWeight:tab===t.k?700:400,whiteSpace:"nowrap",borderBottom:tab===t.k?`2px solid ${C.red}`:"2px solid transparent"}}>
+              {t.l}
+            </button>
+          ))}
+        </div>
+      </header>
+      <div style={{flex:1,padding:18,overflowY:"auto",maxWidth:1200,margin:"0 auto",width:"100%"}}>
+        {tab==="overview"&&<OverviewTab car={car} onUpdate={up}/>}
+        {Object.keys(CATS).map(k=>tab===k&&<ChecklistTab key={k} catKey={k} data={car[k]} suppliers={suppliers} onChange={d=>upCat(k,d)}/>)}
+        {tab==="media"&&<MediaTab car={car} user={user} sbConfig={sbConfig} onChange={up}/>}
+        {tab==="financeiro"&&CAN.financial(user.role)&&<FinancialTab car={car} user={user} suppliers={suppliers} onChange={up} onMarkSold={markSold}/>}
+        {tab==="aprovacao"&&CAN.approve(user.role)&&<ApprovalTab car={car} user={user} onApprove={approve} onReject={()=>{up("status","Em Preparação");save();}}/>}
+      </div>
+    </div>
+  );
+}
+
+// ═══ OVERVIEW TAB ═══════════════════════════════════════════════
+function OverviewTab({car,onUpdate}){
+  const OC={"Pessoa Física":"#10B981","Leilão":"#B45309","Consignado":"#7C3AED"};
+  const cp=Object.entries(CATS).map(([k,v])=>{
+    const d=car[k]; if(!d)return{...v,key:k,pct:0,done:0,inProg:0,total:0};
+    const done=d.items.filter(i=>i.status==="concluído").length;
+    const inProg=d.items.filter(i=>i.status==="em andamento").length;
+    const total=d.items.length;
+    return{...v,key:k,done,inProg,total,pct:total>0?Math.round((done/total)*100):0};
+  });
+  return(
+    <div style={{display:"flex",flexDirection:"column",gap:16}}>
+      <div style={{background:C.card,border:`1px solid ${C.border}`,borderRadius:13,padding:20}}>
+        <div style={{color:C.red,fontWeight:700,marginBottom:14,fontSize:11,letterSpacing:1,textTransform:"uppercase"}}>Informações do Veículo</div>
+        <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(170px,1fr))",gap:12}}>
+          <Inp label="Nome" value={car.name} onChange={v=>onUpdate("name",v)}/>
+          <Inp label="Placa" value={car.plate} onChange={v=>onUpdate("plate",v.toUpperCase())}/>
+          <Inp label="Ano" value={car.year} onChange={v=>onUpdate("year",v)}/>
+          <Inp label="Cor" value={car.color} onChange={v=>onUpdate("color",v)}/>
+          <Inp label="Quilometragem" value={car.km} onChange={v=>onUpdate("km",v)} type="number"/>
+        </div>
+        <div style={{marginTop:12,display:"flex",gap:7,flexWrap:"wrap",alignItems:"center"}}>
+          <Badge label={car.origem} col={OC[car.origem]||C.red}/>
+          {car.origem==="Consignado"&&car.consignadoNome&&<span style={{fontSize:11,color:C.textMuted}}>👤 {car.consignadoNome} · {car.consignadoTel} · Prazo: {car.consignadoPrazo}</span>}
+          {car.origem==="Leilão"&&car.leilaoLote&&<span style={{fontSize:11,color:C.textMuted}}>🔨 Lote {car.leilaoLote} · {car.leilaoData}</span>}
+          {car.aprovadoPor&&<Badge label={`✅ Aprovado por ${car.aprovadoPor}`} col={C.success}/>}
+          {car.status==="Vendido"&&car.garantiaAte&&<Badge label={`🛡️ Garantia até ${new Date(car.garantiaAte+"T00:00:00").toLocaleDateString("pt-BR")}`} col={C.success}/>}
+        </div>
+      </div>
+      <div style={{background:C.card,border:`1px solid ${C.border}`,borderRadius:13,padding:20}}>
+        <div style={{color:C.red,fontWeight:700,marginBottom:14,fontSize:11,letterSpacing:1,textTransform:"uppercase"}}>Progresso por Categoria</div>
+        <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fill,minmax(230px,1fr))",gap:9}}>
+          {cp.map(c=>(
+            <div key={c.key} style={{background:C.bg,border:`1px solid ${C.border}`,borderRadius:9,padding:13}}>
+              <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:7}}>
+                <div style={{fontSize:12,fontWeight:600,color:C.text}}>{c.icon} {c.label}</div>
+                <span style={{fontSize:12,color:c.col,fontWeight:800}}>{c.pct}%</span>
+              </div>
+              <div style={{height:4,background:C.border,borderRadius:2,overflow:"hidden",marginBottom:6}}>
+                <div style={{height:"100%",width:`${c.pct}%`,background:c.col,borderRadius:2}}/>
+              </div>
+              <div style={{display:"flex",gap:9,fontSize:10}}>
+                <span style={{color:C.success}}>✓ {c.done}</span>
+                <span style={{color:C.warning}}>⟳ {c.inProg}</span>
+                <span style={{color:C.error}}>✗ {c.total-c.done-c.inProg}</span>
+              </div>
+            </div>
+          ))}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ═══ CHECKLIST TAB ══════════════════════════════════════════════
+function ChecklistTab({catKey,data,suppliers,onChange}){
+  const [newItem,setNewItem]=useState(""); const cat=CATS[catKey];
+  const done=data.items.filter(i=>i.status==="concluído").length;
+  const pct=data.items.length>0?Math.round((done/data.items.length)*100):0;
+  const upItem=(idx,k,v)=>{const its=[...data.items];its[idx]={...its[idx],[k]:v};onChange({...data,items:its});};
+  function add(){if(!newItem.trim())return;onChange({...data,items:[...data.items,{name:newItem.trim(),status:"pendente",obs:"",fornecedor:"",custom:true}]});setNewItem("");}
+  return(
+    <div style={{display:"flex",flexDirection:"column",gap:12}}>
+      <div style={{background:C.card,border:`1px solid ${cat.col}44`,borderRadius:13,padding:17,display:"flex",alignItems:"center",gap:14}}>
+        <div style={{fontSize:30}}>{cat.icon}</div>
+        <div style={{flex:1}}>
+          <div style={{fontWeight:800,fontSize:17,color:cat.col}}>{cat.label}</div>
+          <div style={{height:5,background:C.border,borderRadius:2,overflow:"hidden",marginTop:7,marginBottom:4}}>
+            <div style={{height:"100%",width:`${pct}%`,background:cat.col,borderRadius:2}}/>
+          </div>
+          <div style={{fontSize:11,color:C.textMuted}}>{done}/{data.items.length} concluídos ({pct}%)</div>
+        </div>
+      </div>
+      {data.items.map((item,idx)=>(
+        <div key={idx} style={{background:C.card,border:`1px solid ${IT_COL[item.status]}33`,borderRadius:9,padding:"11px 13px",borderLeft:`3px solid ${IT_COL[item.status]}`}}>
+          <div style={{display:"flex",alignItems:"center",gap:7,marginBottom:7,flexWrap:"wrap"}}>
+            <div style={{flex:1,fontSize:13,color:C.text,fontWeight:500,minWidth:100}}>{item.name}</div>
+            {["pendente","em andamento","concluído"].map(st=>(
+              <button key={st} onClick={()=>upItem(idx,"status",st)}
+                style={{padding:"3px 8px",borderRadius:14,border:`1px solid ${item.status===st?IT_COL[st]:C.border}`,background:item.status===st?IT_COL[st]+"30":"transparent",color:item.status===st?IT_COL[st]:C.textDim,cursor:"pointer",fontSize:10,fontFamily:"inherit",fontWeight:item.status===st?700:400}}>
+                {IT_LBL[st]}
+              </button>
+            ))}
+            {suppliers.length>0&&(
+              <select value={item.fornecedor||""} onChange={e=>upItem(idx,"fornecedor",e.target.value)}
+                style={{background:"#040406",border:`1px solid ${C.border}`,borderRadius:5,padding:"3px 7px",color:item.fornecedor?C.text:C.textDim,fontSize:10,fontFamily:"inherit",cursor:"pointer",outline:"none"}}>
+                <option value="">Fornecedor...</option>
+                {suppliers.map(s=><option key={s.id} value={s.nome} style={{color:C.text,background:C.card}}>{s.nome}</option>)}
+              </select>
+            )}
+            {item.custom&&<button onClick={()=>onChange({...data,items:data.items.filter((_,i)=>i!==idx)})} style={{background:"none",border:"none",color:C.textDim,cursor:"pointer",fontSize:14}}>✕</button>}
+          </div>
+          <input placeholder="Observação..." value={item.obs||""} onChange={e=>upItem(idx,"obs",e.target.value)}
+            style={{width:"100%",background:"transparent",border:"none",borderTop:`1px solid ${C.border}`,padding:"6px 0 2px",color:C.textMuted,fontSize:11,fontFamily:"inherit",outline:"none"}}/>
+        </div>
+      ))}
+      <div style={{background:C.card,border:`1px dashed ${C.border}`,borderRadius:9,padding:11,display:"flex",gap:9}}>
+        <input placeholder="+ Adicionar item personalizado..." value={newItem} onChange={e=>setNewItem(e.target.value)} onKeyDown={e=>e.key==="Enter"&&add()}
+          style={{flex:1,background:"transparent",border:"none",color:C.text,fontSize:12,fontFamily:"inherit",outline:"none"}}/>
+        <Btn small onClick={add}>Adicionar</Btn>
+      </div>
+      <div style={{background:C.card,border:`1px solid ${C.border}`,borderRadius:9,padding:14}}>
+        <Txta label="Observações gerais desta seção" value={data.obs} onChange={v=>onChange({...data,obs:v})} placeholder="Fornecedores, orçamentos, prazos..."/>
+      </div>
+    </div>
+  );
+}
+
+// ═══ MEDIA TAB ══════════════════════════════════════════════════
+function MediaTab({car,user,sbConfig,onChange}){
+  const [upl,setUpl]=useState(false); const [prog,setProg]=useState(0); const [err,setErr]=useState(""); const [lb,setLb]=useState(null);
+  const pRef=useRef(); const vRef=useRef();
+  const hasSb=sbConfig?.url&&sbConfig?.key;
+  async function handleUpload(files,type){
+    if(!hasSb){setErr("Configure o Supabase primeiro (botão ⚙️ no topo).");return;}
+    setUpl(true);setErr("");setProg(0);
+    const done=[];
+    for(let i=0;i<files.length;i++){
+      try{
+        const f=files[i]; const res=await sbUpload(sbConfig.url,sbConfig.key,f,car.id,type);
+        done.push({...res,uploadedBy:user.name}); setProg(Math.round(((i+1)/files.length)*100));
+      }catch(e){setErr(e.message);}
+    }
+    if(type==="foto") onChange("fotos",[...(car.fotos||[]),...done]);
+    else onChange("videos",[...(car.videos||[]),...done]);
+    setUpl(false);setProg(0);
+  }
+  function rem(type,idx){const k=type==="foto"?"fotos":"videos";onChange(k,(car[k]||[]).filter((_,i)=>i!==idx));}
+  return(
+    <div style={{display:"flex",flexDirection:"column",gap:14}}>
+      {!hasSb&&(
+        <div style={{background:"#1a1000",border:`1px solid ${C.warning}44`,borderRadius:9,padding:13,color:C.warning,fontSize:12}}>
+          ⚠️ Supabase não configurado. Clique em <b>⚙️</b> no topo (somente Proprietário) para configurar e ativar upload de fotos e vídeos.
+        </div>
+      )}
+      {/* FOTOS */}
+      <div style={{background:C.card,border:`1px solid ${C.border}`,borderRadius:13,padding:20}}>
+        <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:14}}>
+          <div style={{fontWeight:700,color:C.red,fontSize:12,letterSpacing:1}}>📸 FOTOS ({(car.fotos||[]).length})</div>
+          <div>
+            <input type="file" ref={pRef} accept="image/*" multiple style={{display:"none"}} onChange={e=>handleUpload(Array.from(e.target.files),"foto")}/>
+            <Btn small onClick={()=>pRef.current.click()} disabled={!hasSb||upl}>{upl?`Enviando ${prog}%`:"📷 Adicionar Fotos"}</Btn>
+          </div>
+        </div>
+        {err&&<div style={{color:C.error,fontSize:11,marginBottom:10,padding:"7px 10px",background:"#7F1D1D22",borderRadius:5}}>{err}</div>}
+        {upl&&<div style={{marginBottom:12}}><div style={{height:3,background:C.border,borderRadius:2,overflow:"hidden"}}><div style={{height:"100%",width:`${prog}%`,background:C.red,transition:"width .3s"}}/></div></div>}
+        {(car.fotos||[]).length===0?(
+          <div style={{textAlign:"center",padding:"28px 0",color:C.textDim,fontSize:12}}>Nenhuma foto adicionada</div>
+        ):(
+          <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fill,minmax(130px,1fr))",gap:8}}>
+            {car.fotos.map((f,i)=>(
+              <div key={i} style={{position:"relative",borderRadius:7,overflow:"hidden",border:`1px solid ${C.border}`,aspectRatio:"4/3"}}>
+                <img src={f.url} alt={f.name} style={{width:"100%",height:"100%",objectFit:"cover",cursor:"pointer"}} onClick={()=>setLb({items:car.fotos,idx:i})}/>
+                <button onClick={()=>rem("foto",i)} style={{position:"absolute",top:3,right:3,background:"#000a",border:"none",color:"#fff",cursor:"pointer",borderRadius:"50%",width:20,height:20,fontSize:11,display:"flex",alignItems:"center",justifyContent:"center"}}>✕</button>
+                <div style={{position:"absolute",bottom:0,left:0,right:0,background:"#000a",padding:"2px 5px",fontSize:8,color:"#fff9"}}>{f.uploadedBy} · {new Date(f.uploadedAt).toLocaleDateString("pt-BR")}</div>
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
+      {/* VIDEOS */}
+      <div style={{background:C.card,border:`1px solid ${C.border}`,borderRadius:13,padding:20}}>
+        <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:14}}>
+          <div style={{fontWeight:700,color:C.red,fontSize:12,letterSpacing:1}}>🎬 VÍDEOS ({(car.videos||[]).length})</div>
+          <div>
+            <input type="file" ref={vRef} accept="video/*" multiple style={{display:"none"}} onChange={e=>handleUpload(Array.from(e.target.files),"video")}/>
+            <Btn small onClick={()=>vRef.current.click()} disabled={!hasSb||upl}>🎥 Adicionar Vídeos</Btn>
+          </div>
+        </div>
+        {(car.videos||[]).length===0?(
+          <div style={{textAlign:"center",padding:"28px 0",color:C.textDim,fontSize:12}}>Nenhum vídeo adicionado</div>
+        ):(
+          <div style={{display:"flex",flexDirection:"column",gap:9}}>
+            {car.videos.map((v,i)=>(
+              <div key={i} style={{background:C.bg,border:`1px solid ${C.border}`,borderRadius:9,overflow:"hidden"}}>
+                <video src={v.url} controls style={{width:"100%",maxHeight:280,display:"block"}}/>
+                <div style={{padding:"7px 11px",display:"flex",justifyContent:"space-between",alignItems:"center"}}>
+                  <div style={{fontSize:10,color:C.textMuted}}>{v.name} · {v.uploadedBy} · {new Date(v.uploadedAt).toLocaleDateString("pt-BR")}</div>
+                  <button onClick={()=>rem("video",i)} style={{background:"none",border:"none",color:C.error,cursor:"pointer",fontSize:11}}>Remover</button>
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
+      {/* NOTES */}
+      <div style={{background:C.card,border:`1px solid ${C.border}`,borderRadius:11,padding:16}}>
+        <Txta label="Observações sobre avarias (registro de entrada)" value={car.mediaObs} onChange={v=>onChange("mediaObs",v)} rows={5} placeholder="Descreva os defeitos observados no momento de entrada do veículo..."/>
+      </div>
+      {/* LIGHTBOX */}
+      {lb&&(
+        <div style={{position:"fixed",inset:0,background:"#000e",zIndex:9999,display:"flex",alignItems:"center",justifyContent:"center"}} onClick={()=>setLb(null)}>
+          <img src={lb.items[lb.idx].url} alt="" style={{maxWidth:"90vw",maxHeight:"90vh",objectFit:"contain",borderRadius:7}} onClick={e=>e.stopPropagation()}/>
+          <button onClick={()=>setLb(null)} style={{position:"absolute",top:18,right:18,background:"#fff2",border:"none",color:"#fff",cursor:"pointer",fontSize:22,borderRadius:"50%",width:38,height:38}}>✕</button>
+          {lb.idx>0&&<button onClick={e=>{e.stopPropagation();setLb(l=>({...l,idx:l.idx-1}));}} style={{position:"absolute",left:18,background:"#fff2",border:"none",color:"#fff",cursor:"pointer",fontSize:28,borderRadius:"50%",width:44,height:44}}>‹</button>}
+          {lb.idx<lb.items.length-1&&<button onClick={e=>{e.stopPropagation();setLb(l=>({...l,idx:l.idx+1}));}} style={{position:"absolute",right:18,background:"#fff2",border:"none",color:"#fff",cursor:"pointer",fontSize:28,borderRadius:"50%",width:44,height:44}}>›</button>}
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ═══ FINANCIAL TAB ══════════════════════════════════════════════
+function FinancialTab({car,user,suppliers,onChange,onMarkSold}){
+  const [nd,setNd]=useState(""); const [nv,setNv]=useState(""); const [nf,setNf]=useState("");
+  const isCons=car.origem==="Consignado";
+  const vp=isCons?Number(car.consignadoValor)||0:Number(car.valorPago)||0;
+  const lt=Number(car.leilaoTaxas)||0;
+  const desp=(car.despesas||[]).reduce((s,d)=>s+(Number(d.valor)||0),0);
+  const custo=vp+lt+desp;
+  const pv=Number(car.precoVenda)||0; const fipe=Number(car.tabelaFipe)||0; const com=Number(car.comissaoValor)||0;
+  const lucro=pv-custo-com; const marg=pv>0?((lucro/pv)*100).toFixed(1):"—"; const dif=fipe>0?pv-fipe:null;
+  function addDesp(){if(!nd.trim()||!nv)return;onChange("despesas",[...(car.despesas||[]),{id:Date.now(),desc:nd,valor:nv,fornecedor:nf}]);setNd("");setNv("");setNf("");}
+  const kpis=[
+    ...(CAN.seeCusto(user.role)?[{l:isCons?"Valor ao Dono":"Valor Pago",v:fmt(vp),col:"#EF4444",i:"💸"}]:[]),
+    ...(car.origem==="Leilão"?[{l:"Taxas Leilão",v:fmt(lt),col:"#F59E0B",i:"🔨"}]:[]),
+    {l:"Despesas",v:fmt(desp),col:"#F59E0B",i:"🔧"},
+    ...(CAN.seeCusto(user.role)?[{l:"Custo Total",v:fmt(custo),col:"#F97316",i:"📊"}]:[]),
+    {l:"FIPE",v:fmt(fipe),col:"#8B5CF6",i:"📋"},
+    {l:"Preço Venda",v:fmt(pv),col:"#10B981",i:"🏷️"},
+    {l:"Comissão",v:fmt(com),col:"#F59E0B",i:"🧑‍💼"},
+    ...(CAN.seeCusto(user.role)?[
+      {l:"Lucro Líquido",v:fmt(lucro),col:lucro>=0?C.success:C.error,i:lucro>=0?"📈":"📉"},
+      {l:"Margem",v:marg!=="—"?`${marg}%`:"—",col:lucro>=0?C.success:C.error,i:"%"},
+      {l:"vs FIPE",v:dif!==null?fmt(dif):"—",col:dif!==null?dif>=0?C.success:C.error:C.textMuted,i:"⚖️"},
+    ]:[]),
+  ];
+  return(
+    <div style={{display:"flex",flexDirection:"column",gap:16}}>
+      <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fill,minmax(140px,1fr))",gap:9}}>
+        {kpis.map(k=>(
+          <div key={k.l} style={{background:C.card,border:`1px solid ${C.border}`,borderRadius:11,padding:13}}>
+            <div style={{fontSize:17,marginBottom:5}}>{k.i}</div>
+            <div style={{fontSize:9,color:C.textMuted,marginBottom:3,letterSpacing:.5,textTransform:"uppercase"}}>{k.l}</div>
+            <div style={{fontSize:15,fontWeight:800,color:k.col}}>{k.v}</div>
+          </div>
+        ))}
+      </div>
+      <div style={{background:C.card,border:`1px solid ${C.border}`,borderRadius:13,padding:20,display:"flex",flexDirection:"column",gap:14}}>
+        <div style={{color:C.red,fontWeight:700,fontSize:11,letterSpacing:1}}>DADOS FINANCEIROS</div>
+        <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(160px,1fr))",gap:12}}>
+          {!isCons&&CAN.seeCusto(user.role)&&<Inp label="Valor pago (R$)" value={car.valorPago} onChange={v=>onChange("valorPago",v)} type="number"/>}
+          <Inp label="Tabela FIPE (R$)" value={car.tabelaFipe} onChange={v=>onChange("tabelaFipe",v)} type="number"/>
+          <Inp label="Preço de venda (R$)" value={car.precoVenda} onChange={v=>onChange("precoVenda",v)} type="number"/>
+          <Inp label="Comissão do vendedor (R$)" value={car.comissaoValor} onChange={v=>onChange("comissaoValor",v)} type="number"/>
+          <Inp label="Vendedor" value={car.vendedor} onChange={v=>onChange("vendedor",v)} placeholder="Nome"/>
+        </div>
+        <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(160px,1fr))",gap:12}}>
+          <Sel label="Forma de Pagamento" value={car.formaPagamento} onChange={v=>onChange("formaPagamento",v)} options={["","À Vista","Financiado","Permuta","Misto"]}/>
+          {car.formaPagamento==="Financiado"&&<Inp label="Banco Financiador" value={car.bancoFinanciamento} onChange={v=>onChange("bancoFinanciamento",v)} placeholder="Ex: Santander..."/>}
+          <Inp label="Comprador" value={car.comprador} onChange={v=>onChange("comprador",v)}/>
+          <Inp label="Telefone do Comprador" value={car.compradorTel} onChange={v=>onChange("compradorTel",v)}/>
+        </div>
+        {car.status!=="Vendido"&&pv>0&&<Btn onClick={onMarkSold} variant="success" style={{alignSelf:"flex-start"}}>🤝 Registrar Venda</Btn>}
+        {car.status==="Vendido"&&car.garantiaAte&&(
+          <div style={{background:"#064E3B33",border:`1px solid #10B98155`,borderRadius:7,padding:11,fontSize:12,color:C.success}}>
+            ✅ Vendido em {car.dataVenda?new Date(car.dataVenda+"T00:00:00").toLocaleDateString("pt-BR"):"—"} · Garantia 3 meses até {new Date(car.garantiaAte+"T00:00:00").toLocaleDateString("pt-BR")} · Comprador: {car.comprador||"—"}
+          </div>
+        )}
+      </div>
+      <div style={{background:C.card,border:`1px solid ${C.border}`,borderRadius:13,padding:20}}>
+        <div style={{color:C.red,fontWeight:700,fontSize:11,letterSpacing:1,marginBottom:13}}>DESPESAS</div>
+        <div style={{display:"flex",gap:7,marginBottom:11,flexWrap:"wrap"}}>
+          <input placeholder="Descrição" value={nd} onChange={e=>setNd(e.target.value)} style={{flex:2,minWidth:100,background:"#040406",border:`1px solid ${C.border}`,borderRadius:7,padding:"8px 10px",color:C.text,fontSize:12,fontFamily:"inherit",outline:"none"}}/>
+          <input placeholder="R$" value={nv} onChange={e=>setNv(e.target.value)} type="number" style={{flex:1,minWidth:70,background:"#040406",border:`1px solid ${C.border}`,borderRadius:7,padding:"8px 10px",color:C.text,fontSize:12,fontFamily:"inherit",outline:"none"}}/>
+          {suppliers.length>0&&(
+            <select value={nf} onChange={e=>setNf(e.target.value)} style={{flex:1,minWidth:90,background:"#040406",border:`1px solid ${C.border}`,borderRadius:7,padding:"8px 10px",color:nf?C.text:C.textMuted,fontSize:12,fontFamily:"inherit",outline:"none",cursor:"pointer"}}>
+              <option value="">Fornecedor</option>
+              {suppliers.map(s=><option key={s.id} value={s.nome} style={{color:C.text,background:C.card}}>{s.nome}</option>)}
+            </select>
+          )}
+          <Btn small onClick={addDesp}>Adicionar</Btn>
+        </div>
+        {(car.despesas||[]).length===0?<div style={{color:C.textDim,fontSize:12,textAlign:"center",padding:"18px 0"}}>Nenhuma despesa registrada</div>:(
+          <>
+            {car.despesas.map(d=>(
+              <div key={d.id} style={{display:"flex",alignItems:"center",background:C.bg,border:`1px solid ${C.border}`,borderRadius:7,padding:"9px 11px",marginBottom:6}}>
+                <div style={{flex:1,fontSize:12,color:C.text}}>{d.desc}{d.fornecedor?` · ${d.fornecedor}`:""}</div>
+                <div style={{fontSize:12,fontWeight:700,color:"#F87171",marginRight:11}}>{fmt(d.valor)}</div>
+                <button onClick={()=>onChange("despesas",car.despesas.filter(x=>x.id!==d.id))} style={{background:"none",border:"none",color:C.textDim,cursor:"pointer",fontSize:15}}>✕</button>
+              </div>
+            ))}
+            <div style={{textAlign:"right",paddingTop:9,borderTop:`1px solid ${C.border}`,marginTop:5}}>
+              <span style={{fontSize:13,fontWeight:800,color:"#F59E0B"}}>Total: {fmt(desp)}</span>
+            </div>
+          </>
+        )}
+      </div>
+    </div>
+  );
+}
+
+// ═══ APPROVAL TAB ═══════════════════════════════════════════════
+function ApprovalTab({car,user,onApprove,onReject}){
+  let total=0,done=0;
+  Object.keys(CATS).forEach(k=>{if(car[k])car[k].items.forEach(i=>{total++;if(i.status==="concluído")done++;});});
+  const pct=total>0?Math.round((done/total)*100):0;
+  return(
+    <div style={{display:"flex",flexDirection:"column",gap:14}}>
+      <div style={{background:C.card,border:`1px solid ${C.warning}44`,borderRadius:13,padding:22}}>
+        <div style={{fontWeight:800,fontSize:17,color:C.warning,marginBottom:14}}>⏳ Veículo Aguardando Aprovação</div>
+        <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:12,marginBottom:18}}>
+          {[{l:"Preparação",v:`${pct}%`,col:pct===100?C.success:C.warning},{l:"Itens OK",v:done,col:C.success},{l:"Pendentes",v:total-done,col:C.error}].map(x=>(
+            <div key={x.l} style={{background:C.bg,borderRadius:9,padding:14,textAlign:"center"}}>
+              <div style={{fontSize:28,fontWeight:800,color:x.col}}>{x.v}</div>
+              <div style={{fontSize:10,color:C.textMuted,marginTop:4}}>{x.l}</div>
+            </div>
+          ))}
+        </div>
+        <div style={{display:"flex",gap:10}}>
+          <Btn onClick={onApprove} variant="success" style={{flex:1,justifyContent:"center"}}>✅ Aprovar — Pronto para Venda</Btn>
+          <Btn onClick={onReject} variant="danger" style={{flex:1,justifyContent:"center"}}>↩️ Devolver para Preparação</Btn>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ═══ SUPPLIERS ══════════════════════════════════════════════════
+function SuppliersModal({suppliers,onChange,onClose}){
+  const [nome,setNome]=useState(""); const [tipo,setTipo]=useState(FORN_TIPOS[0]); const [tel,setTel]=useState(""); const [obs,setObs]=useState("");
+  function add(){if(!nome.trim())return;onChange([...suppliers,{id:Date.now(),nome:nome.trim(),tipo,tel,obs}]);setNome("");setTipo(FORN_TIPOS[0]);setTel("");setObs("");}
+  return(
+    <Modal title="🏢 Fornecedores" onClose={onClose} width={680}>
+      <div style={{display:"flex",flexDirection:"column",gap:18}}>
+        <div style={{background:C.bg,border:`1px solid ${C.border}`,borderRadius:11,padding:16}}>
+          <div style={{color:C.red,fontWeight:700,fontSize:11,letterSpacing:1,marginBottom:13}}>CADASTRAR FORNECEDOR</div>
+          <div style={{display:"grid",gridTemplateColumns:"2fr 1fr 1fr",gap:10,marginBottom:10}}>
+            <Inp label="Nome" value={nome} onChange={setNome} placeholder="Nome da empresa"/>
+            <Sel label="Tipo" value={tipo} onChange={setTipo} options={FORN_TIPOS}/>
+            <Inp label="Telefone" value={tel} onChange={setTel} placeholder="(00) 00000-0000"/>
+          </div>
+          <div style={{display:"flex",gap:10,alignItems:"flex-end"}}>
+            <div style={{flex:1}}><Inp label="Observações" value={obs} onChange={setObs} placeholder="Endereço, especialidade..."/></div>
+            <Btn onClick={add}>Cadastrar</Btn>
+          </div>
+        </div>
+        {suppliers.length===0?<div style={{textAlign:"center",padding:"18px 0",color:C.textDim}}>Nenhum fornecedor cadastrado</div>:(
+          <div style={{display:"flex",flexDirection:"column",gap:7}}>
+            {suppliers.map(s=>(
+              <div key={s.id} style={{background:C.bg,border:`1px solid ${C.border}`,borderRadius:9,padding:"11px 14px",display:"flex",alignItems:"center",gap:11}}>
+                <div style={{flex:1}}>
+                  <div style={{fontWeight:600,fontSize:13,color:C.text}}>{s.nome}</div>
+                  <div style={{fontSize:11,color:C.textMuted}}>{s.tipo}{s.tel?` · ${s.tel}`:""}{s.obs?` · ${s.obs}`:""}</div>
+                </div>
+                <button onClick={()=>onChange(suppliers.filter(x=>x.id!==s.id))} style={{background:"none",border:"none",color:C.error,cursor:"pointer",fontSize:12}}>Remover</button>
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
+    </Modal>
+  );
+}
+
+// ═══ LOADING ════════════════════════════════════════════════════
+function LoadingScreen(){
+  return(
+    <div style={{minHeight:"100vh",background:C.bg,display:"flex",alignItems:"center",justifyContent:"center"}}>
+      <div style={{textAlign:"center"}}>
+        <img src={LOGO} alt="Premier" style={{width:200,objectFit:"contain",filter:"drop-shadow(0 4px 24px rgba(204,26,26,.4))"}}/>
+        <div style={{color:C.textMuted,marginTop:14,fontSize:12,letterSpacing:2}}>Carregando...</div>
+      </div>
+    </div>
+  );
+}
+
+
+// ═══ CHANGE PASSWORD MODAL ══════════════════════════════════════
+function ChangePasswordModal({user,passwords,onSave,onClose}){
+  const [current,setCurrent]=useState("");
+  const [novo,setNovo]=useState("");
+  const [confirm,setConfirm]=useState("");
+  const [err,setErr]=useState("");
+  const [ok,setOk]=useState(false);
+
+  function handle(){
+    const pw=passwords[user.role]||"premier123";
+    if(current!==pw){setErr("Senha atual incorreta.");return;}
+    if(novo.length<6){setErr("Nova senha deve ter ao menos 6 caracteres.");return;}
+    if(novo!==confirm){setErr("As senhas não coincidem.");return;}
+    onSave(user.role,novo);
+    setOk(true);
+    setTimeout(onClose,1500);
+  }
+
+  return(
+    <Modal title="🔑 Alterar Senha" onClose={onClose} width={420}>
+      <div style={{display:"flex",flexDirection:"column",gap:14}}>
+        {ok?(
+          <div style={{background:"#064E3B33",border:`1px solid #10B98155`,borderRadius:9,padding:14,color:C.success,textAlign:"center",fontWeight:700}}>✅ Senha alterada com sucesso!</div>
+        ):(
+          <>
+            <Inp label="Senha atual" value={current} onChange={setCurrent} type="password" placeholder="••••••••"/>
+            <Inp label="Nova senha" value={novo} onChange={setNovo} type="password" placeholder="Mínimo 6 caracteres"/>
+            <Inp label="Confirmar nova senha" value={confirm} onChange={setConfirm} type="password" placeholder="Repita a nova senha"/>
+            {err&&<div style={{color:C.error,fontSize:12,background:"#7F1D1D22",border:`1px solid ${C.error}33`,borderRadius:7,padding:"8px 11px"}}>{err}</div>}
+            <div style={{display:"flex",gap:10}}>
+              <Btn onClick={onClose} variant="ghost" style={{flex:1,justifyContent:"center"}}>Cancelar</Btn>
+              <Btn onClick={handle} style={{flex:2,justifyContent:"center"}}>Salvar Nova Senha</Btn>
+            </div>
+          </>
+        )}
+      </div>
+    </Modal>
+  );
+}
+
+// ═══ APP ROOT ════════════════════════════════════════════════════
+function App(){
+  const [ready,setReady]=useState(false);
+  const [user,setUser]=useState(null);
+  const [view,setView]=useState("dashboard");
+  const [cars,setCars]=useState([]);
+  const [suppliers,setSuppliers]=useState([]);
+  const [selectedCar,setSelectedCar]=useState(null);
+  const [sbConfig,setSbConfig]=useState(null);
+  const [showSuppliers,setShowSuppliers]=useState(false);
+  const [showSetup,setShowSetup]=useState(false);
+  const [showChangePass,setShowChangePass]=useState(false);
+  const [passwords,setPasswords]=useState({proprietario:"premier123",gerente:"premier123",preparacao:"premier123",funcionario:"premier123"});
+
+  useEffect(()=>{
+    const link=document.createElement("link");
+    link.href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@300;400;500;600;700;800&display=swap";
+    link.rel="stylesheet"; document.head.appendChild(link);
+    const style=document.createElement("style");
+    style.textContent=`*{box-sizing:border-box;margin:0;padding:0}body{font-family:'DM Sans',system-ui,sans-serif!important;background:#060606}::-webkit-scrollbar{width:6px;height:6px}::-webkit-scrollbar-track{background:#0F0F0F}::-webkit-scrollbar-thumb{background:#CC1A1A;border-radius:3px}input[type=number]::-webkit-inner-spin-button{-webkit-appearance:none}select option{background:#0F0F0F}`;
+    document.head.appendChild(style);
+    async function load(){
+      try{
+        // Always use hardcoded SB config
+        setSbConfig({url: SB_URL, key: SB_KEY});
+        // Load shared data from Supabase
+        const shared = await sbLoadData();
+        if(shared){
+          if(shared.cars) setCars(shared.cars);
+          if(shared.suppliers) setSuppliers(shared.suppliers);
+          if(shared.passwords) setPasswords(p=>({...p,...shared.passwords}));
+        } else {
+          // Fallback to local storage
+          const c=await window.storage.get("premier_cars_v3"); if(c)setCars(JSON.parse(c.value));
+          const s=await window.storage.get("premier_supp_v3"); if(s)setSuppliers(JSON.parse(s.value));
+        }
+        const u=await window.storage.get("premier_user_v3"); if(u)setUser(JSON.parse(u.value));
+      }catch(e){console.error("Load error:",e);}
+      setReady(true);
+    }
+    load();
+  },[]);
+
+  async function saveCars(newCars){
+    setCars(newCars);
+    try{await window.storage.set("premier_cars_v3",JSON.stringify(newCars));}catch{}
+    await sbSaveData({cars:newCars,suppliers,passwords});
+  }
+  async function saveSup(newSup){
+    setSuppliers(newSup);
+    try{await window.storage.set("premier_supp_v3",JSON.stringify(newSup));}catch{}
+    await sbSaveData({cars,suppliers:newSup,passwords});
+  }
+  async function savePassword(role,newPass){
+    const updated={...passwords,[role]:newPass};
+    setPasswords(updated);
+    await sbSaveData({cars,suppliers,passwords:updated});
+  }
+  async function saveSb(cfg){setSbConfig(cfg);try{await window.storage.set("premier_sb_v3",JSON.stringify(cfg));}catch{}}
+  async function login(u){setUser(u);try{await window.storage.set("premier_user_v3",JSON.stringify(u));}catch{}}
+  async function logout(){setUser(null);setView("dashboard");try{await window.storage.delete("premier_user_v3");}catch{}}
+  async function openSetup(){setShowSetup(true);try{await window.storage.set("premier_setup_open","1");}catch{}}
+  async function closeSetup(){setShowSetup(false);try{await window.storage.delete("premier_setup_open");}catch{}}
+
+  if(!ready) return <LoadingScreen/>;
+  if(showSetup) return <SetupScreen onSave={cfg=>{saveSb(cfg);closeSetup();}} onBack={closeSetup}/>;
+  if(!user) return <LoginScreen onLogin={login} passwords={passwords}/>;
+
+  if(view==="carDetail"&&selectedCar) return(
+    <>
+      <CarDetail car={selectedCar} user={user} suppliers={suppliers} sbConfig={sbConfig}
+        onBack={()=>{setView("dashboard");setSelectedCar(null);}}
+        onSave={u=>{const l=cars.map(c=>c.id===u.id?u:c);saveCars(l);setSelectedCar(u);}}
+        onDelete={id=>{saveCars(cars.filter(c=>c.id!==id));setView("dashboard");setSelectedCar(null);}}/>
+      {showSuppliers&&<SuppliersModal suppliers={suppliers} onChange={saveSup} onClose={()=>setShowSuppliers(false)}/>}
+    </>
+  );
+
+  if(view==="addCar") return(
+    <AddCarForm car={createCar(Date.now(),user.name)} onBack={()=>setView("dashboard")}
+      onSave={car=>{saveCars([...cars,car]);setSelectedCar(car);setView("carDetail");}}/>
+  );
+
+  return(
+    <>
+      <Dashboard cars={cars} suppliers={suppliers} user={user} sbConfig={sbConfig}
+        onLogout={logout}
+        onSelectCar={car=>{setSelectedCar(car);setView("carDetail");}}
+        onAddCar={()=>setView("addCar")}
+        onOpenSuppliers={()=>setShowSuppliers(true)}
+        onOpenSetup={openSetup}
+        onOpenChangePass={()=>setShowChangePass(true)}/>
+      {showSuppliers&&<SuppliersModal suppliers={suppliers} onChange={saveSup} onClose={()=>setShowSuppliers(false)}/>}
+      {showChangePass&&<ChangePasswordModal user={user} passwords={passwords} onSave={savePassword} onClose={()=>setShowChangePass(false)}/>}
+    </>
+  );
+}
+
+
+    const root = ReactDOM.createRoot(document.getElementById('root'));
+    root.render(<App/>);
+  </script>
+</body>
+</html>
