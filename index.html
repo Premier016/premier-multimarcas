@@ -16,11 +16,12 @@
   <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
   <style>
     *{box-sizing:border-box;margin:0;padding:0}
-    body{background:#060606;font-family:system-ui,sans-serif;overflow-x:hidden}
+    body{background:#060606;font-family:system-ui,sans-serif;overflow-x:hidden;transition:background .3s}
     #root{min-height:100vh}
     ::-webkit-scrollbar{width:4px;height:4px}
     ::-webkit-scrollbar-thumb{background:#CC1A1A;border-radius:2px}
     input,select,textarea{-webkit-appearance:none}
+    @keyframes slideIn{from{opacity:0;transform:translateX(40px)}to{opacity:1;transform:translateX(0)}}
   </style>
 </head>
 <body>
@@ -86,19 +87,30 @@ async function sbLoadData() {
 }
 
 // ═══ CONSTANTS ══════════════════════════════════════════════════
-const C = {
-  bg: "#060606", card: "#0F0F0F", cardHover: "#161616",
-  border: "#252525", borderLight: "#333",
-  red: "#CC1A1A", redLight: "#E53535",
-  text: "#F0F0F0", textMuted: "#9A9A9A", textDim: "#444",
-  success: "#10B981", warning: "#F59E0B", error: "#EF4444", info: "#3B82F6",
-};
+function getTheme(dark){
+  return dark ? {
+    bg:"#060606",card:"#0F0F0F",cardHover:"#161616",
+    border:"#252525",borderLight:"#333",
+    red:"#CC1A1A",redLight:"#E53535",
+    text:"#F0F0F0",textMuted:"#9A9A9A",textDim:"#444",
+    success:"#10B981",warning:"#F59E0B",error:"#EF4444",info:"#3B82F6",
+  } : {
+    bg:"#F4F4F5",card:"#FFFFFF",cardHover:"#F0F0F0",
+    border:"#E2E2E2",borderLight:"#CCCCCC",
+    red:"#CC1A1A",redLight:"#E53535",
+    text:"#111111",textMuted:"#555555",textDim:"#AAAAAA",
+    success:"#059669",warning:"#D97706",error:"#DC2626",info:"#2563EB",
+  };
+}
+// Global theme — updated by App via window.__theme
+let C = getTheme(true);
 
 const CRED = {
-  proprietario: { pass: "premier123", role: "proprietario", name: "Proprietário" },
-  gerente:      { pass: "premier123", role: "gerente",      name: "Gerente" },
-  preparacao:   { pass: "premier123", role: "preparacao",   name: "Resp. Preparação" },
-  funcionario:  { pass: "premier123", role: "funcionario",  name: "Funcionário" },
+  proprietario1: { pass: "premier123", role: "proprietario", name: "Proprietário 1" },
+  proprietario2: { pass: "premier123", role: "proprietario", name: "Proprietário 2" },
+  gerente:       { pass: "premier123", role: "gerente",      name: "Gerente" },
+  preparacao:    { pass: "premier123", role: "preparacao",   name: "Resp. Preparação" },
+  funcionario:   { pass: "premier123", role: "funcionario",  name: "Funcionário" },
 };
 const ROLE_LABEL = {
   proprietario: "👑 Proprietário", gerente: "⭐ Gerente",
@@ -142,7 +154,7 @@ const addMonths = (d,n) => { const x=new Date(d); x.setMonth(x.getMonth()+n); re
 function createCar(id, by) {
   const cats = {};
   Object.keys(CATS).forEach(k => { cats[k] = { items: CATS[k].items.map(n=>({name:n,status:"pendente",obs:"",fornecedor:""})), obs:"" }; });
-  return { id, name:"", plate:"", year:"", color:"", km:"", origem:"Pessoa Física", loja:"Premier Multimarcas", prestadorAtual:"",
+  return { id, name:"", marca:"", plate:"", year:"", color:"", km:"", origem:"Pessoa Física", loja:"Premier Multimarcas", prestadorAtual:"",
     consignadoNome:"", consignadoCPF:"", consignadoTel:"", consignadoValor:"", consignadoPrazo:"",
     leilaoLote:"", leilaoData:"", leilaoTaxas:"",
     status:"Entrada", createdAt:new Date().toISOString(), createdBy:by,
@@ -155,7 +167,7 @@ function createCar(id, by) {
 
 // ═══ UI ═════════════════════════════════════════════════════════
 function Btn({children,onClick,style:s,variant="primary",small,disabled}){
-  const V={primary:{background:C.red,color:"#fff"},ghost:{background:"transparent",color:C.textMuted,border:`1px solid ${C.border}`},danger:{background:"#7F1D1D",color:"#FCA5A5",border:`1px solid #DC262633`},success:{background:"#064E3B",color:"#6EE7B7",border:`1px solid #10B98155`},info:{background:"#1E3A5F",color:"#93C5FD",border:`1px solid #3B82F633`}};
+  const V={primary:{background:C.red,color:"#fff"},ghost:{background:"transparent",color:C.textMuted,border:`1px solid ${C.border}`},danger:{background:"#7F1D1D",color:"#FCA5A5",border:`1px solid #DC262633`},success:{background:"#064E3B",color:"#6EE7B7",border:`1px solid #10B98155`},info:{background:"#1E3A5F",color:"#93C5FD",border:`1px solid #3B82F633`},warning:{background:"#78350F",color:"#FCD34D",border:`1px solid #F59E0B55`}};
   return <button onClick={disabled?undefined:onClick} style={{padding:small?"5px 12px":"9px 18px",borderRadius:7,border:"none",cursor:disabled?"not-allowed":"pointer",fontFamily:"inherit",fontSize:small?11:13,fontWeight:600,transition:"all 0.15s",display:"inline-flex",alignItems:"center",gap:5,letterSpacing:.3,opacity:disabled?.5:1,...V[variant],...s}}>{children}</button>;
 }
 function Badge({label,col}){return <span style={{background:col+"22",color:col,border:`1px solid ${col}55`,borderRadius:20,padding:"2px 10px",fontSize:10,fontWeight:700,letterSpacing:.5,whiteSpace:"nowrap"}}>{label}</span>;}
@@ -248,8 +260,8 @@ function LoginScreen({onLogin,passwords={}}){
   function handle(){
     const uname=u.toLowerCase().trim();
     const c=CRED[uname];
-    const pw=passwords?passwords[uname]:null;
-    if(c&&(p===(pw||c.pass))) onLogin({username:u,...c}); else setErr("Usuário ou senha inválidos");
+    const pw=passwords?passwords[c?.role]||passwords[uname]:null;
+    if(c&&(p===(pw||c.pass))) onLogin({username:uname,...c}); else setErr("Usuário ou senha inválidos");
   }
   return(
     <div style={{minHeight:"100vh",background:C.bg,display:"flex",alignItems:"center",justifyContent:"center",padding:24}}>
@@ -267,7 +279,7 @@ function LoginScreen({onLogin,passwords={}}){
         </div>
         <div style={{marginTop:14,background:C.card,border:`1px solid ${C.border}`,borderRadius:10,padding:13,fontSize:11,color:C.textMuted,lineHeight:2}}>
           <div style={{color:C.textDim,fontWeight:700,fontSize:9,letterSpacing:1,marginBottom:4}}>ACESSOS DEMO — SENHA: premier123</div>
-          {Object.entries(ROLE_LABEL).map(([k,v])=><div key={k}>{v}: <b style={{color:C.text}}>{k}</b></div>)}
+          {Object.entries(CRED).map(([k,v])=><div key={k}>{ROLE_LABEL[v.role]}: <b style={{color:C.text}}>{k}</b></div>)}
         </div>
       </div>
     </div>
@@ -290,7 +302,7 @@ function BottomNav({items}){
 }
 
 // ═══ DASHBOARD ══════════════════════════════════════════════════
-function Dashboard({cars,suppliers,user,onLogout,onSelectCar,onAddCar,onOpenSuppliers,onOpenSetup,onOpenChangePass,sbConfig}){
+function Dashboard({cars,suppliers,user,onLogout,onSelectCar,onAddCar,onOpenSuppliers,onOpenSetup,onOpenChangePass,sbConfig,darkMode,onToggleDark}){
   const [search,setSearch]=useState(""); const [fStatus,setFStatus]=useState("Todos");
   const fil=cars.filter(c=>(fStatus==="Todos"||c.status===fStatus)&&((c.name||"").toLowerCase().includes(search.toLowerCase())||(c.plate||"").toLowerCase().includes(search.toLowerCase())));
   let lucroTotal=0;
@@ -378,6 +390,7 @@ function CarCard({car,user,onClick}){
       <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",marginBottom:10}}>
         <div>
           <div style={{fontWeight:700,fontSize:14,color:C.text,marginBottom:2}}>{car.name||"— Sem nome —"}</div>
+          {car.marca&&<div style={{fontSize:10,color:C.red,fontWeight:600,marginBottom:1}}>{car.marca}</div>}
           <div style={{fontSize:11,color:C.textMuted}}>{car.plate||"Sem placa"}{car.year?` · ${car.year}`:""}{car.color?` · ${car.color}`:""}</div>
         </div>
         <Badge label={car.status} col={ST_COL[car.status]||C.red}/>
@@ -428,6 +441,7 @@ function AddCarForm({car:init,onBack,onSave}){
         <div style={{background:C.card,border:`1px solid ${C.border}`,borderRadius:13,padding:22,display:"flex",flexDirection:"column",gap:14}}>
           <div style={{color:C.red,fontWeight:700,fontSize:11,letterSpacing:1}}>DADOS BÁSICOS</div>
           <Inp label="Nome do veículo *" value={car.name} onChange={v=>up("name",v)} placeholder="Ex: Honda Civic EXL 2020"/>
+          <Inp label="Marca" value={car.marca} onChange={v=>up("marca",v)} placeholder="Ex: Honda, Toyota, VW..."/>
           <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(100px,1fr))",gap:10}}>
             <Inp label="Placa *" value={car.plate} onChange={v=>up("plate",v.toUpperCase())} placeholder="ABC-1234"/>
             <Inp label="Ano" value={car.year} onChange={v=>up("year",v)} placeholder="2020"/>
@@ -472,9 +486,20 @@ function AddCarForm({car:init,onBack,onSave}){
 
 // ═══ CAR DETAIL ═════════════════════════════════════════════════
 function CarDetail({car:init,user,suppliers,sbConfig,onBack,onSave,onDelete}){
-  const [car,setCar]=useState(init); const [tab,setTab]=useState("overview"); const [saved,setSaved]=useState(false); const [showCats,setShowCats]=useState(false);
-  const up=(k,v)=>setCar(p=>({...p,[k]:v}));
-  const upCat=(k,d)=>setCar(p=>({...p,[k]:d}));
+  const [car,setCar]=useState(init); const [tab,setTab]=useState("overview"); const [saved,setSaved]=useState(false); const [showCats,setShowCats]=useState(false); const [showPrestChecklist,setShowPrestChecklist]=useState(false);
+  const saveTimer=useRef(null);
+  function autoSave(updated){
+    clearTimeout(saveTimer.current);
+    saveTimer.current=setTimeout(()=>{onSave(updated);setSaved(true);setTimeout(()=>setSaved(false),1500);},1200);
+  }
+  const up=(k,v)=>setCar(p=>{
+    const n={...p,[k]:v};
+    autoSave(n);
+    if(k==="status") pushNotif(`📋 Status: ${v} — ${p.name||p.plate}`,"info");
+    if(k==="prestadorAtual"&&v&&v!=="Sem prestador") pushNotif(`🔧 Enviado para ${v}: ${p.name||p.plate}`,"warning");
+    return n;
+  });
+  const upCat=(k,d)=>setCar(p=>{const n={...p,[k]:d};autoSave(n);return n;});
   function save(){onSave(car);setSaved(true);setTimeout(()=>setSaved(false),2000);}
   function approve(){const u={...car,status:"Pronto para Venda",aprovadoPor:user.name,aprovadoEm:new Date().toISOString()};setCar(u);onSave(u);}
   function markSold(){const dv=new Date().toISOString().split("T")[0];const u={...car,status:"Vendido",dataVenda:dv,garantiaAte:addMonths(dv,3)};setCar(u);onSave(u);}
@@ -514,13 +539,12 @@ function CarDetail({car:init,user,suppliers,sbConfig,onBack,onSave,onDelete}){
           {CAN.delete(user.role)&&<button onClick={()=>{if(window.confirm(`Excluir "${car.name}"?`))onDelete(car.id);}} style={{background:"none",border:"none",color:C.error,cursor:"pointer",fontSize:16}}>🗑</button>}
         </div>
         {/* action buttons */}
-        {(car.status==="Em Preparação"||car.status==="Aguardando Aprovação"&&CAN.approve(user.role)||car.status==="Pronto para Venda")&&(
-          <div style={{marginTop:8,display:"flex",gap:7}}>
+        <div style={{marginTop:8,display:"flex",gap:7,flexWrap:"wrap"}}>
+            {car.prestadorAtual&&car.prestadorAtual!=="Sem prestador"&&<Btn onClick={()=>setShowPrestChecklist(true)} variant="warning" small style={{flex:1,justifyContent:"center"}}>📋 Checklist Saída: {car.prestadorAtual}</Btn>}
             {car.status==="Em Preparação"&&<Btn onClick={()=>up("status","Aguardando Aprovação")} variant="info" small style={{flex:1,justifyContent:"center"}}>📤 Enviar para Aprovação</Btn>}
             {car.status==="Aguardando Aprovação"&&CAN.approve(user.role)&&<Btn onClick={approve} variant="success" small style={{flex:1,justifyContent:"center"}}>✅ Aprovar</Btn>}
             {car.status==="Pronto para Venda"&&<Btn onClick={markSold} variant="success" small style={{flex:1,justifyContent:"center"}}>🤝 Registrar Venda</Btn>}
           </div>
-        )}
         {/* current checklist category indicator */}
         {isCatTab&&curCat&&(
           <div onClick={()=>setShowCats(true)} style={{marginTop:8,padding:"6px 11px",background:curCat.col+"18",border:`1px solid ${curCat.col}44`,borderRadius:7,display:"flex",alignItems:"center",gap:7,cursor:"pointer"}}>
@@ -533,7 +557,7 @@ function CarDetail({car:init,user,suppliers,sbConfig,onBack,onSave,onDelete}){
       {/* CONTENT */}
       <div style={{flex:1,padding:"14px 14px 0",maxWidth:1200,margin:"0 auto",width:"100%"}}>
         {tab==="overview"&&<OverviewTab car={car} onUpdate={up}/>}
-        {isCatTab&&<ChecklistTab catKey={tab} data={car[tab]} suppliers={suppliers} onChange={d=>upCat(tab,d)}/>}
+        {isCatTab&&<ChecklistTab catKey={tab} data={car[tab]} suppliers={suppliers} onChange={d=>upCat(tab,d)} user={user}/>}
         {tab==="media"&&<MediaTab car={car} user={user} sbConfig={sbConfig} onChange={up}/>}
         {tab==="financeiro"&&CAN.financial(user.role)&&<FinancialTab car={car} user={user} suppliers={suppliers} onChange={up} onMarkSold={markSold}/>}
         {tab==="aprovacao"&&CAN.approve(user.role)&&<ApprovalTab car={car} user={user} onApprove={approve} onReject={()=>{up("status","Em Preparação");save();}}/>}
@@ -561,6 +585,40 @@ function CarDetail({car:init,user,suppliers,sbConfig,onBack,onSave,onDelete}){
           </div>
         </div>
       )}
+      {/* PRESTADOR CHECKLIST MODAL */}
+      {showPrestChecklist&&(
+        <div style={{position:"fixed",inset:0,background:"#000d",zIndex:400,display:"flex",alignItems:"flex-end"}}>
+          <div style={{background:C.card,borderRadius:"16px 16px 0 0",width:"100%",padding:20,paddingBottom:90,maxHeight:"85vh",overflowY:"auto"}}>
+            <div style={{fontWeight:700,color:C.warning,marginBottom:4,fontSize:14}}>⚠️ Checklist de Saída do Prestador</div>
+            <div style={{color:C.textMuted,fontSize:12,marginBottom:16}}>Confirme o estado do veículo antes de sair de <b style={{color:C.text}}>{car.prestadorAtual}</b></div>
+            {[
+              "Veículo sem riscos ou amassados novos",
+              "Vidros e espelhos intactos",
+              "Rodas e pneus sem danos",
+              "Interior sem avarias",
+              "Serviço solicitado foi realizado",
+              "Sem vazamentos visíveis",
+              "Documentos e pertences do veículo presentes",
+            ].map((item,i)=>{
+              const key=`prest_check_${i}`;
+              const checked=car[key]||false;
+              return(
+                <div key={i} onClick={()=>up(key,!checked)}
+                  style={{display:"flex",alignItems:"center",gap:12,padding:"11px 14px",background:checked?"#064E3B22":C.bg,border:`1px solid ${checked?C.success:C.border}`,borderRadius:9,marginBottom:8,cursor:"pointer"}}>
+                  <div style={{width:22,height:22,borderRadius:6,border:`2px solid ${checked?C.success:C.border}`,background:checked?C.success:"transparent",display:"flex",alignItems:"center",justifyContent:"center",flexShrink:0}}>
+                    {checked&&<span style={{color:"#fff",fontSize:13}}>✓</span>}
+                  </div>
+                  <span style={{fontSize:13,color:checked?C.success:C.text}}>{item}</span>
+                </div>
+              );
+            })}
+            <div style={{display:"flex",gap:10,marginTop:16}}>
+              <Btn onClick={()=>setShowPrestChecklist(false)} variant="ghost" style={{flex:1,justifyContent:"center"}}>Cancelar</Btn>
+              <Btn onClick={()=>{up("prestadorAtual","");setShowPrestChecklist(false);}} variant="success" style={{flex:2,justifyContent:"center"}}>✅ Confirmar e Liberar Carro</Btn>
+            </div>
+          </div>
+        </div>
+      )}
       {/* BOTTOM NAV */}
       <BottomNav items={navItems.map(it=>({...it,fn:()=>handleNavClick(it.k),active:it.k===activeNav}))}/>
     </div>
@@ -583,6 +641,7 @@ function OverviewTab({car,onUpdate}){
         <div style={{color:C.red,fontWeight:700,marginBottom:14,fontSize:11,letterSpacing:1,textTransform:"uppercase"}}>Informações do Veículo</div>
         <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(170px,1fr))",gap:12}}>
           <Inp label="Nome" value={car.name} onChange={v=>onUpdate("name",v)}/>
+          <Inp label="Marca" value={car.marca||""} onChange={v=>onUpdate("marca",v)} placeholder="Ex: Honda"/>
           <Inp label="Placa" value={car.plate} onChange={v=>onUpdate("plate",v.toUpperCase())}/>
           <Inp label="Ano" value={car.year} onChange={v=>onUpdate("year",v)}/>
           <Inp label="Cor" value={car.color} onChange={v=>onUpdate("color",v)}/>
@@ -624,11 +683,19 @@ function OverviewTab({car,onUpdate}){
 }
 
 // ═══ CHECKLIST TAB ══════════════════════════════════════════════
-function ChecklistTab({catKey,data,suppliers,onChange}){
+function ChecklistTab({catKey,data,suppliers,onChange,user}){
   const [newItem,setNewItem]=useState(""); const cat=CATS[catKey];
   const done=data.items.filter(i=>i.status==="concluído").length;
   const pct=data.items.length>0?Math.round((done/data.items.length)*100):0;
-  const upItem=(idx,k,v)=>{const its=[...data.items];its[idx]={...its[idx],[k]:v};onChange({...data,items:its});};
+  const upItem=(idx,k,v)=>{
+    const its=[...data.items];
+    const now=new Date().toLocaleString("pt-BR");
+    if(k==="status"){
+      its[idx]={...its[idx],[k]:v,changedBy:user?.name||"",changedAt:now};
+      if(v==="concluído") pushNotif(`✅ ${its[idx].name} concluído por ${user?.name||""}`, "success");
+    } else its[idx]={...its[idx],[k]:v};
+    onChange({...data,items:its});
+  };
   function add(){if(!newItem.trim())return;onChange({...data,items:[...data.items,{name:newItem.trim(),status:"pendente",obs:"",fornecedor:"",custom:true}]});setNewItem("");}
   return(
     <div style={{display:"flex",flexDirection:"column",gap:12}}>
@@ -663,6 +730,7 @@ function ChecklistTab({catKey,data,suppliers,onChange}){
           </div>
           <input placeholder="Observação..." value={item.obs||""} onChange={e=>upItem(idx,"obs",e.target.value)}
             style={{width:"100%",background:"transparent",border:"none",borderTop:`1px solid ${C.border}`,padding:"6px 0 2px",color:C.textMuted,fontSize:11,fontFamily:"inherit",outline:"none"}}/>
+          {item.changedBy&&<div style={{fontSize:9,color:C.textDim,marginTop:3}}>✏️ {item.changedBy} · {item.changedAt}</div>}
         </div>
       ))}
       <div style={{background:C.card,border:`1px dashed ${C.border}`,borderRadius:9,padding:11,display:"flex",gap:9}}>
@@ -977,6 +1045,35 @@ function ChangePasswordModal({user,passwords,onSave,onClose}){
   );
 }
 
+
+// ═══ NOTIFICATIONS ══════════════════════════════════════════════
+let _notifAdd = null;
+function useNotifications(){
+  const [notifs,setNotifs]=useState([]);
+  useEffect(()=>{
+    _notifAdd=(msg,type="info")=>{
+      const id=Date.now();
+      setNotifs(p=>[{id,msg,type},...p.slice(0,4)]);
+      setTimeout(()=>setNotifs(p=>p.filter(n=>n.id!==id)),4000);
+    };
+    return()=>{_notifAdd=null;};
+  },[]);
+  return notifs;
+}
+function pushNotif(msg,type="info"){if(_notifAdd)_notifAdd(msg,type);}
+function NotifToasts({notifs}){
+  const TC={info:C.info,success:C.success,warning:C.warning,error:C.error};
+  return(
+    <div style={{position:"fixed",top:14,right:14,zIndex:9000,display:"flex",flexDirection:"column",gap:8,maxWidth:300,pointerEvents:"none"}}>
+      {notifs.map(n=>(
+        <div key={n.id} style={{background:C.card,border:`1px solid ${TC[n.type]||C.info}`,borderLeft:`4px solid ${TC[n.type]||C.info}`,borderRadius:10,padding:"10px 14px",fontSize:12,color:C.text,boxShadow:"0 4px 20px #0006",animation:"slideIn .25s ease"}}>
+          {n.msg}
+        </div>
+      ))}
+    </div>
+  );
+}
+
 // ═══ APP ROOT ════════════════════════════════════════════════════
 function App(){
   const [ready,setReady]=useState(false);
@@ -989,7 +1086,14 @@ function App(){
   const [showSuppliers,setShowSuppliers]=useState(false);
   const [showSetup,setShowSetup]=useState(false);
   const [showChangePass,setShowChangePass]=useState(false);
-  const [passwords,setPasswords]=useState({proprietario:"premier123",gerente:"premier123",preparacao:"premier123",funcionario:"premier123"});
+  const [passwords,setPasswords]=useState({proprietario1:"premier123",proprietario2:"premier123",gerente:"premier123",preparacao:"premier123",funcionario:"premier123"});
+  const [darkMode,setDarkMode]=useState(true);
+  const notifs=useNotifications();
+  // sync global C with darkMode
+  useEffect(()=>{
+    Object.assign(C,getTheme(darkMode));
+    document.body.style.background=C.bg;
+  },[darkMode]);
 
   useEffect(()=>{
     const link=document.createElement("link");
@@ -1014,6 +1118,7 @@ function App(){
           const s=await window.storage.get("premier_supp_v3"); if(s)setSuppliers(JSON.parse(s.value));
         }
         const u=await window.storage.get("premier_user_v3"); if(u)setUser(JSON.parse(u.value));
+        const dm=await window.storage.get("premier_dark_v1"); if(dm)setDarkMode(JSON.parse(dm.value));
       }catch(e){console.error("Load error:",e);}
       setReady(true);
     }
@@ -1037,6 +1142,7 @@ function App(){
   }
   async function saveSb(cfg){setSbConfig(cfg);try{await window.storage.set("premier_sb_v3",JSON.stringify(cfg));}catch{}}
   async function login(u){setUser(u);try{await window.storage.set("premier_user_v3",JSON.stringify(u));}catch{}}
+  async function toggleDark(){const nd=!darkMode;setDarkMode(nd);try{await window.storage.set("premier_dark_v1",JSON.stringify(nd));}catch{}}
   async function logout(){setUser(null);setView("dashboard");try{await window.storage.delete("premier_user_v3");}catch{}}
   async function openSetup(){setShowSetup(true);try{await window.storage.set("premier_setup_open","1");}catch{}}
   async function closeSetup(){setShowSetup(false);try{await window.storage.delete("premier_setup_open");}catch{}}
@@ -1057,7 +1163,7 @@ function App(){
 
   if(view==="addCar") return(
     <AddCarForm car={createCar(Date.now(),user.name)} onBack={()=>setView("dashboard")}
-      onSave={car=>{saveCars([...cars,car]);setSelectedCar(car);setView("carDetail");}}/>
+      onSave={car=>{saveCars([...cars,car]);setSelectedCar(car);setView("carDetail");pushNotif(`🚗 Novo veículo cadastrado: ${car.name||car.plate}`,"success");}}/>
   );
 
   return(
@@ -1068,9 +1174,11 @@ function App(){
         onAddCar={()=>setView("addCar")}
         onOpenSuppliers={()=>setShowSuppliers(true)}
         onOpenSetup={openSetup}
-        onOpenChangePass={()=>setShowChangePass(true)}/>
+        onOpenChangePass={()=>setShowChangePass(true)}
+        darkMode={darkMode} onToggleDark={toggleDark}/>
       {showSuppliers&&<SuppliersModal suppliers={suppliers} onChange={saveSup} onClose={()=>setShowSuppliers(false)}/>}
       {showChangePass&&<ChangePasswordModal user={user} passwords={passwords} onSave={savePassword} onClose={()=>setShowChangePass(false)}/>}
+      <NotifToasts notifs={notifs}/>
     </>
   );
 }
