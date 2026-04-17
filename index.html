@@ -10,6 +10,7 @@
   <title>Premier Multimarcas</title>
   <link rel="manifest" href="manifest.json"/>
   <link rel="apple-touch-icon" href="icon.png"/>
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.min.js"></script>
   <script src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
   <script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
   <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
@@ -34,53 +35,34 @@ const LOGO = "data:image/jpeg;base64,/9j/4AAQSkZJRgABAQAAAQABAAD/2wBDAAMCAgMCAgM
 async function sbUpload(sbUrl, sbKey, file, carId, type) {
   const ext = file.name.split(".").pop();
   const path = `${carId}/${type}-${Date.now()}.${ext}`;
-  const res = await fetch(`${sbUrl}/storage/v1/object/premier-media/${path}`, {
-    method: "POST",
-    headers: {
-      "Authorization": `Bearer ${sbKey}`,
-      "apikey": sbKey,
-      "Content-Type": file.type,
-      "x-upsert": "true"
-    },
-    body: file,
-  });
-  if (!res.ok) {
-    const e = await res.text();
-    throw new Error("Upload falhou: " + e);
-  }
-  return { url: `${sbUrl}/storage/v1/object/public/premier-media/${path}`, name: file.name, type, uploadedAt: new Date().toISOString() };
+  const sb = window.supabase.createClient(sbUrl, sbKey);
+  const { data, error } = await sb.storage.from("premier-media").upload(path, file, { upsert: true, contentType: file.type });
+  if (error) throw new Error("Upload falhou: " + error.message);
+  const { data: pub } = sb.storage.from("premier-media").getPublicUrl(path);
+  return { url: pub.publicUrl, name: file.name, type, uploadedAt: new Date().toISOString() };
 }
 
 // ═══ SUPABASE CONFIG ═══════════════════════════════════════════
 const SB_URL = "https://vjmmobduzchqnjrskffk.supabase.co";
-const SB_KEY = "sb_publishable_EqUQ_sllkILr6LLP1lYKRQ_Uz7-Xpoh";
+const SB_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InZqbW1vYmR1emNocW5qcnNrZmZrIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzYzOTQwMjUsImV4cCI6MjA5MTk3MDAyNX0.BXV8wB1jbM7FmSf5dJ9JQZ0542Z9brRlNHL-uu8MsDQ";
 
 // ═══ SUPABASE DB SYNC ════════════════════════════════════════════
+function getSB() {
+  return window.supabase.createClient(SB_URL, SB_KEY);
+}
+
 async function sbSet(key, value) {
   try {
-    const r = await fetch(`${SB_URL}/rest/v1/premier_data`, {
-      method: "POST",
-      headers: {
-        "Authorization": `Bearer ${SB_KEY}`,
-        "apikey": SB_KEY,
-        "Content-Type": "application/json",
-        "Prefer": "resolution=merge-duplicates"
-      },
-      body: JSON.stringify({ key, value, updated_at: new Date().toISOString() })
-    });
-    if (!r.ok) { const e = await r.text(); console.error("sbSet error:", e); }
+    const { error } = await getSB().from("premier_data")
+      .upsert({ key, value, updated_at: new Date().toISOString() }, { onConflict: "key" });
+    if (error) console.error("sbSet error:", error.message);
   } catch(e) { console.error("sbSet exception:", e); }
 }
 
 async function sbGet(key) {
   try {
-    const r = await fetch(`${SB_URL}/rest/v1/premier_data?key=eq.${key}&select=value`, {
-      headers: { "Authorization": `Bearer ${SB_KEY}`, "apikey": SB_KEY }
-    });
-    if (r.ok) {
-      const rows = await r.json();
-      if (rows.length > 0) return rows[0].value;
-    }
+    const { data, error } = await getSB().from("premier_data").select("value").eq("key", key).single();
+    if (!error && data) return data.value;
   } catch(e) { console.error("sbGet exception:", e); }
   return null;
 }
@@ -93,11 +75,11 @@ async function sbSaveData(data) {
 
 async function sbLoadData() {
   try {
-    const [cars, suppliers, passwords] = await Promise.all([
-      sbGet("cars"), sbGet("suppliers"), sbGet("passwords")
-    ]);
-    if (cars !== null || suppliers !== null) {
-      return { cars: cars||[], suppliers: suppliers||[], passwords: passwords||{} };
+    const { data, error } = await getSB().from("premier_data").select("key,value");
+    if (!error && data && data.length > 0) {
+      const result = {};
+      data.forEach(row => { result[row.key] = row.value; });
+      return { cars: result.cars||[], suppliers: result.suppliers||[], passwords: result.passwords||{} };
     }
   } catch(e) { console.error("sbLoadData error:", e); }
   return null;
