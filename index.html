@@ -2,12 +2,11 @@
 <html lang="pt-BR">
 <head>
   <meta charset="UTF-8"/>
-  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0"/>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no"/>
   <meta name="theme-color" content="#CC1A1A"/>
   <meta name="apple-mobile-web-app-capable" content="yes"/>
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent"/>
   <meta name="apple-mobile-web-app-title" content="Premier"/>
-  <meta name="application-name" content="Premier Multimarcas"/>
   <title>Premier Multimarcas</title>
   <link rel="manifest" href="manifest.json"/>
   <link rel="apple-touch-icon" href="icon.png"/>
@@ -15,9 +14,12 @@
   <script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
   <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
   <style>
-    * { box-sizing: border-box; margin: 0; padding: 0; }
-    body { background: #060606; font-family: system-ui, sans-serif; }
-    #root { min-height: 100vh; }
+    *{box-sizing:border-box;margin:0;padding:0}
+    body{background:#060606;font-family:system-ui,sans-serif;overflow-x:hidden}
+    #root{min-height:100vh}
+    ::-webkit-scrollbar{width:4px;height:4px}
+    ::-webkit-scrollbar-thumb{background:#CC1A1A;border-radius:2px}
+    input,select,textarea{-webkit-appearance:none}
   </style>
 </head>
 <body>
@@ -252,10 +254,25 @@ function LoginScreen({onLogin,passwords={}}){
   );
 }
 
+// ═══ BOTTOM NAV ═════════════════════════════════════════════════
+function BottomNav({items}){
+  return(
+    <nav style={{position:"fixed",bottom:0,left:0,right:0,background:C.card,borderTop:`1px solid ${C.border}`,display:"flex",zIndex:200,paddingBottom:"env(safe-area-inset-bottom)"}}>
+      {items.map(it=>(
+        <button key={it.k} onClick={it.fn} style={{flex:1,padding:"10px 4px 8px",background:"none",border:"none",cursor:"pointer",display:"flex",flexDirection:"column",alignItems:"center",gap:3,opacity:it.active?1:.5,transition:"opacity .15s"}}>
+          <span style={{fontSize:20}}>{it.icon}</span>
+          <span style={{fontSize:9,color:it.active?C.red:C.textMuted,fontWeight:it.active?700:400,letterSpacing:.3,fontFamily:"inherit"}}>{it.label}</span>
+          {it.active&&<span style={{width:16,height:2,background:C.red,borderRadius:1}}/>}
+        </button>
+      ))}
+    </nav>
+  );
+}
+
 // ═══ DASHBOARD ══════════════════════════════════════════════════
 function Dashboard({cars,suppliers,user,onLogout,onSelectCar,onAddCar,onOpenSuppliers,onOpenSetup,onOpenChangePass,sbConfig}){
-  const [search,setSearch]=useState(""); const [fStatus,setFStatus]=useState("Todos"); const [fOrigem,setFOrigem]=useState("Todas");
-  const fil=cars.filter(c=>(fStatus==="Todos"||c.status===fStatus)&&(fOrigem==="Todas"||c.origem===fOrigem)&&((c.name||"").toLowerCase().includes(search.toLowerCase())||(c.plate||"").toLowerCase().includes(search.toLowerCase())));
+  const [search,setSearch]=useState(""); const [fStatus,setFStatus]=useState("Todos");
+  const fil=cars.filter(c=>(fStatus==="Todos"||c.status===fStatus)&&((c.name||"").toLowerCase().includes(search.toLowerCase())||(c.plate||"").toLowerCase().includes(search.toLowerCase())));
   let lucroTotal=0;
   if(CAN.financial(user.role)) cars.filter(c=>c.status==="Vendido").forEach(c=>{
     const pv=Number(c.precoVenda)||0; const vp=c.origem==="Consignado"?Number(c.consignadoValor)||0:Number(c.valorPago)||0;
@@ -265,66 +282,63 @@ function Dashboard({cars,suppliers,user,onLogout,onSelectCar,onAddCar,onOpenSupp
   const stats=[
     {l:"Total",v:cars.length,col:C.red,icon:"🚗"},
     {l:"Em Prep.",v:cars.filter(c=>c.status==="Em Preparação").length,col:"#3B82F6",icon:"🔧"},
-    {l:"Aguard. Aprov.",v:cars.filter(c=>c.status==="Aguardando Aprovação").length,col:"#F59E0B",icon:"⏳"},
+    {l:"Aprovação",v:cars.filter(c=>c.status==="Aguardando Aprovação").length,col:"#F59E0B",icon:"⏳"},
     {l:"Prontos",v:cars.filter(c=>c.status==="Pronto para Venda").length,col:"#10B981",icon:"✅"},
     {l:"Vendidos",v:cars.filter(c=>c.status==="Vendido").length,col:"#8B5CF6",icon:"🤝"},
+    ...(CAN.financial(user.role)?[{l:"Lucro Total",v:fmt(lucroTotal),col:lucroTotal>=0?C.success:C.error,icon:"📈",wide:true}]:[]),
+  ];
+  const navItems=[
+    {k:"home",icon:"🏠",label:"Início",fn:()=>{},active:true},
+    {k:"add",icon:"➕",label:"Novo",fn:onAddCar,active:false},
+    ...(CAN.suppliers(user.role)?[{k:"sup",icon:"🏢",label:"Fornecedores",fn:onOpenSuppliers,active:false}]:[]),
+    ...(CAN.financial(user.role)?[{k:"pass",icon:"🔑",label:"Senha",fn:onOpenChangePass,active:false}]:[]),
+    ...(CAN.setupSb(user.role)?[{k:"cfg",icon:"⚙️",label:"Config",fn:onOpenSetup,active:false}]:[]),
+    {k:"out",icon:"🚪",label:"Sair",fn:onLogout,active:false},
   ];
   return(
-    <div style={{minHeight:"100vh",background:C.bg,display:"flex",flexDirection:"column"}}>
-      <header style={{background:C.card,borderBottom:`1px solid ${C.border}`,padding:"11px 18px",display:"flex",alignItems:"center",justifyContent:"space-between",position:"sticky",top:0,zIndex:100}}>
-        <div style={{display:"flex",alignItems:"center",gap:12}}>
-          <img src={LOGO} alt="Premier" style={{height:42,objectFit:"contain"}}/>
-          <div style={{width:1,height:30,background:C.border}}/>
-          <div style={{fontSize:11,color:C.textMuted,letterSpacing:1}}>Painel de Controle</div>
-        </div>
-        <div style={{display:"flex",alignItems:"center",gap:9}}>
-          
-          {CAN.suppliers(user.role)&&<Btn onClick={onOpenSuppliers} variant="ghost" small>🏢 Fornecedores</Btn>}
-          {CAN.financial(user.role)&&<Btn onClick={onOpenChangePass} variant="ghost" small>🔑</Btn>}
-          {CAN.setupSb(user.role)&&<Btn onClick={onOpenSetup} variant="ghost" small>⚙️</Btn>}
-          <div style={{textAlign:"right"}}>
-            <div style={{fontSize:12,color:C.text,fontWeight:600}}>{user.name}</div>
-            <div style={{fontSize:9,color:C.red,letterSpacing:.5}}>{ROLE_LABEL[user.role]}</div>
-          </div>
-          <Btn onClick={onLogout} variant="ghost" small>Sair</Btn>
+    <div style={{minHeight:"100vh",background:C.bg,display:"flex",flexDirection:"column",paddingBottom:70}}>
+      {/* HEADER */}
+      <header style={{background:C.card,borderBottom:`1px solid ${C.border}`,padding:"10px 16px",display:"flex",alignItems:"center",justifyContent:"space-between",position:"sticky",top:0,zIndex:100}}>
+        <img src={LOGO} alt="Premier" style={{height:38,objectFit:"contain"}}/>
+        <div style={{textAlign:"right"}}>
+          <div style={{fontSize:12,color:C.text,fontWeight:700}}>{user.name}</div>
+          <div style={{fontSize:9,color:C.red,letterSpacing:.5}}>{ROLE_LABEL[user.role]}</div>
         </div>
       </header>
-      <div style={{padding:18,flex:1,maxWidth:1400,margin:"0 auto",width:"100%"}}>
-        <div style={{display:"grid",gridTemplateColumns:`repeat(${CAN.financial(user.role)?6:5},1fr)`,gap:10,marginBottom:18}}>
+      <div style={{padding:"14px 14px 0",maxWidth:1400,margin:"0 auto",width:"100%"}}>
+        {/* STATS */}
+        <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fill,minmax(140px,1fr))",gap:8,marginBottom:14}}>
           {stats.map(s=>(
-            <div key={s.l} style={{background:C.card,border:`1px solid ${C.border}`,borderRadius:11,padding:"14px 16px",display:"flex",alignItems:"center",gap:10}}>
-              <div style={{fontSize:22}}>{s.icon}</div>
-              <div><div style={{fontSize:24,fontWeight:800,color:s.col,lineHeight:1}}>{s.v}</div><div style={{fontSize:10,color:C.textMuted,marginTop:3}}>{s.l}</div></div>
+            <div key={s.l} style={{background:C.card,border:`1px solid ${C.border}`,borderRadius:11,padding:"12px 13px",display:"flex",alignItems:"center",gap:9}}>
+              <span style={{fontSize:20}}>{s.icon}</span>
+              <div style={{minWidth:0}}>
+                <div style={{fontSize:s.wide?13:22,fontWeight:800,color:s.col,lineHeight:1,whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>{s.v}</div>
+                <div style={{fontSize:9,color:C.textMuted,marginTop:3}}>{s.l}</div>
+              </div>
             </div>
           ))}
-          {CAN.financial(user.role)&&(
-            <div style={{background:C.card,border:`1px solid ${C.border}`,borderRadius:11,padding:"14px 16px",display:"flex",alignItems:"center",gap:10}}>
-              <div style={{fontSize:22}}>📈</div>
-              <div><div style={{fontSize:16,fontWeight:800,color:lucroTotal>=0?C.success:C.error,lineHeight:1}}>{fmt(lucroTotal)}</div><div style={{fontSize:10,color:C.textMuted,marginTop:3}}>Lucro total</div></div>
-            </div>
-          )}
         </div>
-        <div style={{display:"flex",gap:9,marginBottom:14,flexWrap:"wrap",alignItems:"center"}}>
-          <input placeholder="🔍  Nome ou placa..." value={search} onChange={e=>setSearch(e.target.value)}
-            style={{background:C.card,border:`1px solid ${C.border}`,borderRadius:7,padding:"8px 13px",color:C.text,fontSize:13,fontFamily:"inherit",outline:"none",flex:1,minWidth:180}}/>
-          <select value={fOrigem} onChange={e=>setFOrigem(e.target.value)} style={{background:C.card,border:`1px solid ${C.border}`,borderRadius:7,padding:"8px 12px",color:C.textMuted,fontSize:12,fontFamily:"inherit",outline:"none",cursor:"pointer"}}>
-            {["Todas",...ORIGENS].map(o=><option key={o}>{o}</option>)}
-          </select>
-          <div style={{display:"flex",gap:5,flexWrap:"wrap"}}>
-            {["Todos",...STATUSES].map(s=>(
-              <button key={s} onClick={()=>setFStatus(s)} style={{padding:"6px 11px",borderRadius:7,border:`1px solid ${fStatus===s?C.red:C.border}`,background:fStatus===s?C.red+"18":"transparent",color:fStatus===s?C.red:C.textMuted,cursor:"pointer",fontSize:11,fontFamily:"inherit",fontWeight:fStatus===s?700:400,transition:"all .15s"}}>{s}</button>
-            ))}
-          </div>
-          <Btn onClick={onAddCar}>+ Novo Veículo</Btn>
+        {/* SEARCH + FILTER */}
+        <input placeholder="🔍  Buscar por nome ou placa..." value={search} onChange={e=>setSearch(e.target.value)}
+          style={{width:"100%",background:C.card,border:`1px solid ${C.border}`,borderRadius:9,padding:"10px 14px",color:C.text,fontSize:13,fontFamily:"inherit",outline:"none",marginBottom:10}}/>
+        <div style={{display:"flex",gap:6,overflowX:"auto",paddingBottom:6,marginBottom:14}}>
+          {["Todos",...STATUSES].map(s=>(
+            <button key={s} onClick={()=>setFStatus(s)}
+              style={{padding:"5px 12px",borderRadius:20,border:`1px solid ${fStatus===s?C.red:C.border}`,background:fStatus===s?C.red+"18":"transparent",color:fStatus===s?C.red:C.textMuted,cursor:"pointer",fontSize:11,fontFamily:"inherit",fontWeight:fStatus===s?700:400,whiteSpace:"nowrap",flexShrink:0}}>
+              {s}
+            </button>
+          ))}
         </div>
+        {/* CARS */}
         {fil.length===0?(
-          <div style={{textAlign:"center",padding:"60px 0",color:C.textMuted}}><div style={{fontSize:44}}>🚗</div><div style={{marginTop:10,fontSize:16}}>Nenhum veículo encontrado</div></div>
+          <div style={{textAlign:"center",padding:"60px 0",color:C.textMuted}}><div style={{fontSize:44}}>🚗</div><div style={{marginTop:10,fontSize:15}}>Nenhum veículo encontrado</div></div>
         ):(
-          <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fill,minmax(290px,1fr))",gap:12}}>
+          <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fill,minmax(280px,1fr))",gap:10}}>
             {fil.map(car=><CarCard key={car.id} car={car} user={user} onClick={()=>onSelectCar(car)}/>)}
           </div>
         )}
       </div>
+      <BottomNav items={navItems}/>
     </div>
   );
 }
@@ -388,11 +402,11 @@ function AddCarForm({car:init,onBack,onSave}){
         <Btn onClick={onBack} variant="ghost" small>← Voltar</Btn>
         <div style={{fontSize:15,fontWeight:700,color:C.red,letterSpacing:1}}>NOVO VEÍCULO</div>
       </header>
-      <div style={{padding:28,maxWidth:700,margin:"0 auto",display:"flex",flexDirection:"column",gap:18}}>
+      <div style={{padding:"16px 14px",maxWidth:700,margin:"0 auto",display:"flex",flexDirection:"column",gap:16}}>
         <div style={{background:C.card,border:`1px solid ${C.border}`,borderRadius:13,padding:22,display:"flex",flexDirection:"column",gap:14}}>
           <div style={{color:C.red,fontWeight:700,fontSize:11,letterSpacing:1}}>DADOS BÁSICOS</div>
           <Inp label="Nome do veículo *" value={car.name} onChange={v=>up("name",v)} placeholder="Ex: Honda Civic EXL 2020"/>
-          <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:12}}>
+          <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(100px,1fr))",gap:10}}>
             <Inp label="Placa *" value={car.plate} onChange={v=>up("plate",v.toUpperCase())} placeholder="ABC-1234"/>
             <Inp label="Ano" value={car.year} onChange={v=>up("year",v)} placeholder="2020"/>
             <Inp label="Cor" value={car.color} onChange={v=>up("color",v)} placeholder="Prata"/>
@@ -417,7 +431,7 @@ function AddCarForm({car:init,onBack,onSave}){
         {car.origem==="Leilão"&&(
           <div style={{background:C.card,border:`1px solid ${origColor["Leilão"]}44`,borderRadius:13,padding:22,display:"flex",flexDirection:"column",gap:12}}>
             <div style={{color:"#B45309",fontWeight:700,fontSize:11,letterSpacing:1}}>🔨 DADOS DO LEILÃO</div>
-            <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:12}}>
+            <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(100px,1fr))",gap:10}}>
               <Inp label="Número do Lote" value={car.leilaoLote} onChange={v=>up("leilaoLote",v)}/>
               <Inp label="Data do Leilão" value={car.leilaoData} onChange={v=>up("leilaoData",v)} type="date"/>
               <Inp label="Taxas do Leilão (R$)" value={car.leilaoTaxas} onChange={v=>up("leilaoTaxas",v)} type="number"/>
@@ -435,59 +449,97 @@ function AddCarForm({car:init,onBack,onSave}){
 
 // ═══ CAR DETAIL ═════════════════════════════════════════════════
 function CarDetail({car:init,user,suppliers,sbConfig,onBack,onSave,onDelete}){
-  const [car,setCar]=useState(init); const [tab,setTab]=useState("overview"); const [saved,setSaved]=useState(false);
+  const [car,setCar]=useState(init); const [tab,setTab]=useState("overview"); const [saved,setSaved]=useState(false); const [showCats,setShowCats]=useState(false);
   const up=(k,v)=>setCar(p=>({...p,[k]:v}));
   const upCat=(k,d)=>setCar(p=>({...p,[k]:d}));
   function save(){onSave(car);setSaved(true);setTimeout(()=>setSaved(false),2000);}
   function approve(){const u={...car,status:"Pronto para Venda",aprovadoPor:user.name,aprovadoEm:new Date().toISOString()};setCar(u);onSave(u);}
-  function markSold(){
-    const dv=new Date().toISOString().split("T")[0];
-    const u={...car,status:"Vendido",dataVenda:dv,garantiaAte:addMonths(dv,3)};
-    setCar(u);onSave(u);
-  }
+  function markSold(){const dv=new Date().toISOString().split("T")[0];const u={...car,status:"Vendido",dataVenda:dv,garantiaAte:addMonths(dv,3)};setCar(u);onSave(u);}
   const days=daysSince(car.createdAt); const dc=car.status==="Vendido"?C.textDim:dayColor(days);
-  const tabs=[
-    {k:"overview",l:"📋 Geral"},
-    ...Object.entries(CATS).map(([k,v])=>({k,l:`${v.icon} ${v.label}`})),
-    {k:"media",l:"📸 Fotos/Vídeos"},
-    ...(CAN.financial(user.role)?[{k:"financeiro",l:"💰 Financeiro"}]:[]),
-    ...(car.status==="Aguardando Aprovação"&&CAN.approve(user.role)?[{k:"aprovacao",l:"✅ Aprovação"}]:[]),
+  const isCatTab=Object.keys(CATS).includes(tab);
+  const curCat=isCatTab?CATS[tab]:null;
+  // bottom nav items
+  const navItems=[
+    {k:"overview",icon:"📋",label:"Geral"},
+    {k:"prep",icon:"🔧",label:"Preparação"},
+    {k:"media",icon:"📸",label:"Mídia"},
+    ...(CAN.financial(user.role)?[{k:"financeiro",icon:"💰",label:"Financeiro"}]:[]),
+    ...(car.status==="Aguardando Aprovação"&&CAN.approve(user.role)?[{k:"aprovacao",icon:"✅",label:"Aprovação"}]:[]),
   ];
+  function handleNavClick(k){
+    if(k==="prep"){setShowCats(true);}
+    else{setTab(k);setShowCats(false);}
+  }
+  const activeNav=isCatTab?"prep":tab;
   return(
-    <div style={{minHeight:"100vh",background:C.bg,display:"flex",flexDirection:"column"}}>
-      <header style={{background:C.card,borderBottom:`1px solid ${C.border}`,padding:"11px 16px",position:"sticky",top:0,zIndex:100}}>
-        <div style={{display:"flex",alignItems:"center",gap:8,marginBottom:9}}>
-          <Btn onClick={onBack} variant="ghost" small>← Voltar</Btn>
+    <div style={{minHeight:"100vh",background:C.bg,display:"flex",flexDirection:"column",paddingBottom:70}}>
+      {/* HEADER */}
+      <header style={{background:C.card,borderBottom:`1px solid ${C.border}`,padding:"10px 14px",position:"sticky",top:0,zIndex:100}}>
+        <div style={{display:"flex",alignItems:"center",gap:8}}>
+          <button onClick={onBack} style={{background:"none",border:"none",color:C.textMuted,cursor:"pointer",fontSize:20,lineHeight:1,padding:"2px 4px"}}>←</button>
           <div style={{flex:1,minWidth:0}}>
-            <div style={{fontWeight:700,fontSize:16,color:C.text,whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>{car.name||"Sem nome"}</div>
-            <div style={{fontSize:10,color:C.textMuted}}>{car.plate} · {car.year} · {car.color} · <span style={{color:dc}}>{days} dias na loja</span></div>
+            <div style={{fontWeight:700,fontSize:15,color:C.text,whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>{car.name||"Sem nome"}</div>
+            <div style={{fontSize:10,color:C.textMuted,display:"flex",gap:6,flexWrap:"wrap"}}>
+              <span>{car.plate}</span>{car.year&&<span>· {car.year}</span>}<span style={{color:dc}}>· {days}d na loja</span>
+            </div>
           </div>
           <select value={car.status} onChange={e=>up("status",e.target.value)}
-            style={{background:ST_COL[car.status]+"22",border:`1px solid ${ST_COL[car.status]}55`,borderRadius:7,padding:"5px 9px",color:ST_COL[car.status],fontFamily:"inherit",fontSize:11,fontWeight:700,cursor:"pointer",outline:"none"}}>
+            style={{background:ST_COL[car.status]+"22",border:`1px solid ${ST_COL[car.status]}55`,borderRadius:7,padding:"5px 8px",color:ST_COL[car.status],fontFamily:"inherit",fontSize:10,fontWeight:700,cursor:"pointer",outline:"none",maxWidth:130}}>
             {STATUSES.map(s=><option key={s} value={s} style={{color:C.text,background:C.card}}>{s}</option>)}
           </select>
-          {car.status==="Em Preparação"&&<Btn onClick={()=>up("status","Aguardando Aprovação")} variant="info" small>📤 Enviar p/ Aprovação</Btn>}
-          {car.status==="Aguardando Aprovação"&&CAN.approve(user.role)&&<Btn onClick={approve} variant="success" small>✅ Aprovar</Btn>}
-          {car.status==="Pronto para Venda"&&<Btn onClick={markSold} variant="success" small>🤝 Vendido</Btn>}
-          <Btn onClick={save} variant={saved?"success":"primary"} small>{saved?"✓ Salvo!":"💾 Salvar"}</Btn>
-          {CAN.delete(user.role)&&<Btn onClick={()=>{if(window.confirm(`Excluir "${car.name}"?`))onDelete(car.id);}} variant="danger" small>🗑</Btn>}
+          <Btn onClick={save} variant={saved?"success":"primary"} small>{saved?"✓":"💾"}</Btn>
+          {CAN.delete(user.role)&&<button onClick={()=>{if(window.confirm(`Excluir "${car.name}"?`))onDelete(car.id);}} style={{background:"none",border:"none",color:C.error,cursor:"pointer",fontSize:16}}>🗑</button>}
         </div>
-        <div style={{display:"flex",gap:1,overflowX:"auto"}}>
-          {tabs.map(t=>(
-            <button key={t.k} onClick={()=>setTab(t.k)}
-              style={{padding:"5px 11px",borderRadius:"5px 5px 0 0",border:"none",background:tab===t.k?C.red+"20":"transparent",color:tab===t.k?C.red:C.textMuted,cursor:"pointer",fontSize:11,fontFamily:"inherit",fontWeight:tab===t.k?700:400,whiteSpace:"nowrap",borderBottom:tab===t.k?`2px solid ${C.red}`:"2px solid transparent"}}>
-              {t.l}
-            </button>
-          ))}
-        </div>
+        {/* action buttons */}
+        {(car.status==="Em Preparação"||car.status==="Aguardando Aprovação"&&CAN.approve(user.role)||car.status==="Pronto para Venda")&&(
+          <div style={{marginTop:8,display:"flex",gap:7}}>
+            {car.status==="Em Preparação"&&<Btn onClick={()=>up("status","Aguardando Aprovação")} variant="info" small style={{flex:1,justifyContent:"center"}}>📤 Enviar para Aprovação</Btn>}
+            {car.status==="Aguardando Aprovação"&&CAN.approve(user.role)&&<Btn onClick={approve} variant="success" small style={{flex:1,justifyContent:"center"}}>✅ Aprovar</Btn>}
+            {car.status==="Pronto para Venda"&&<Btn onClick={markSold} variant="success" small style={{flex:1,justifyContent:"center"}}>🤝 Registrar Venda</Btn>}
+          </div>
+        )}
+        {/* current checklist category indicator */}
+        {isCatTab&&curCat&&(
+          <div onClick={()=>setShowCats(true)} style={{marginTop:8,padding:"6px 11px",background:curCat.col+"18",border:`1px solid ${curCat.col}44`,borderRadius:7,display:"flex",alignItems:"center",gap:7,cursor:"pointer"}}>
+            <span style={{fontSize:14}}>{curCat.icon}</span>
+            <span style={{fontSize:12,color:curCat.col,fontWeight:700,flex:1}}>{curCat.label}</span>
+            <span style={{fontSize:10,color:C.textMuted}}>trocar ▾</span>
+          </div>
+        )}
       </header>
-      <div style={{flex:1,padding:18,overflowY:"auto",maxWidth:1200,margin:"0 auto",width:"100%"}}>
+      {/* CONTENT */}
+      <div style={{flex:1,padding:"14px 14px 0",maxWidth:1200,margin:"0 auto",width:"100%"}}>
         {tab==="overview"&&<OverviewTab car={car} onUpdate={up}/>}
-        {Object.keys(CATS).map(k=>tab===k&&<ChecklistTab key={k} catKey={k} data={car[k]} suppliers={suppliers} onChange={d=>upCat(k,d)}/>)}
+        {isCatTab&&<ChecklistTab catKey={tab} data={car[tab]} suppliers={suppliers} onChange={d=>upCat(tab,d)}/>}
         {tab==="media"&&<MediaTab car={car} user={user} sbConfig={sbConfig} onChange={up}/>}
         {tab==="financeiro"&&CAN.financial(user.role)&&<FinancialTab car={car} user={user} suppliers={suppliers} onChange={up} onMarkSold={markSold}/>}
         {tab==="aprovacao"&&CAN.approve(user.role)&&<ApprovalTab car={car} user={user} onApprove={approve} onReject={()=>{up("status","Em Preparação");save();}}/>}
       </div>
+      {/* CHECKLIST CATEGORY PICKER */}
+      {showCats&&(
+        <div style={{position:"fixed",inset:0,background:"#000c",zIndex:300,display:"flex",alignItems:"flex-end"}} onClick={()=>setShowCats(false)}>
+          <div style={{background:C.card,borderRadius:"16px 16px 0 0",width:"100%",padding:20,paddingBottom:90}} onClick={e=>e.stopPropagation()}>
+            <div style={{fontWeight:700,color:C.red,marginBottom:14,fontSize:13,letterSpacing:1}}>🔧 ESCOLHA A CATEGORIA</div>
+            <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:8}}>
+              {Object.entries(CATS).map(([k,v])=>{
+                const d=car[k]; const done=d?d.items.filter(i=>i.status==="concluído").length:0; const total=d?d.items.length:0; const pct=total>0?Math.round((done/total)*100):0;
+                return(
+                  <button key={k} onClick={()=>{setTab(k);setShowCats(false);}}
+                    style={{background:tab===k?v.col+"22":C.bg,border:`1px solid ${tab===k?v.col:C.border}`,borderRadius:9,padding:"10px 12px",cursor:"pointer",textAlign:"left",display:"flex",alignItems:"center",gap:9}}>
+                    <span style={{fontSize:18}}>{v.icon}</span>
+                    <div style={{flex:1,minWidth:0}}>
+                      <div style={{fontSize:11,fontWeight:700,color:tab===k?v.col:C.text,whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>{v.label}</div>
+                      <div style={{fontSize:9,color:pct===100?C.success:C.textMuted,marginTop:2}}>{pct}% concluído</div>
+                    </div>
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+        </div>
+      )}
+      {/* BOTTOM NAV */}
+      <BottomNav items={navItems.map(it=>({...it,fn:()=>handleNavClick(it.k),active:it.k===activeNav}))}/>
     </div>
   );
 }
