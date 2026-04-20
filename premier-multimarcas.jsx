@@ -1,30 +1,3 @@
-<!DOCTYPE html>
-<html lang="pt-BR">
-<head>
-  <meta charset="UTF-8"/>
-  <meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,viewport-fit=cover"/>
-  <meta name="theme-color" content="#060606"/>
-  <meta name="apple-mobile-web-app-capable" content="yes"/>
-  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent"/>
-  <title>Premier Multimarcas</title>
-  <link rel="manifest" href="manifest.json"/>
-  <style>
-    *{box-sizing:border-box;-webkit-tap-highlight-color:transparent;}
-    body{margin:0;background:#060606;color:#F0F0F0;font-family:system-ui,sans-serif;-webkit-font-smoothing:antialiased;}
-    ::-webkit-scrollbar{width:4px;height:4px}
-    ::-webkit-scrollbar-track{background:transparent}
-    ::-webkit-scrollbar-thumb{background:#333;border-radius:2px}
-    select option{background:#0F0F0F;color:#F0F0F0;}
-    @keyframes slideIn{from{opacity:0;transform:translateX(20px)}to{opacity:1;transform:translateX(0)}}
-  </style>
-</head>
-<body>
-  <div id="root"></div>
-  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
-  <script src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
-  <script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
-  <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
-  <script type="text/babel" data-presets="react">
 import { useState, useEffect, useRef } from "react";
 const SB_URL="https://vjmmobduzchqnjrskffk.supabase.co";
 const SB_KEY="eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InZqbW1vYmR1emNocW5qcnNrZmZrIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzYzOTQwMjUsImV4cCI6MjA5MTk3MDAyNX0.BXV8wB1jbM7FmSf5dJ9JQZ0542Z9brRlNHL-uu8MsDQ";
@@ -1601,9 +1574,3 @@ export default function App(){
     </div>
   );
 }
-
-  const root = ReactDOM.createRoot(document.getElementById('root'));
-  root.render(React.createElement(App));
-  </script>
-</body>
-</html>
