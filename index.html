@@ -1418,8 +1418,19 @@ function FipeModal({
   const [result, setResult] = useState(null);
   const [loading, setLoading] = useState(false);
   const [err, setErr] = useState("");
+  const [loadingMarcas, setLoadingMarcas] = useState(true);
   useEffect(() => {
-    fetch("https://brasilapi.com.br/api/fipe/marcas/v1/carros").then(r => r.json()).then(setMarcas).catch(() => setErr("Erro ao carregar marcas."));
+    setLoadingMarcas(true);
+    fetch("https://brasilapi.com.br/api/fipe/marcas/v1/carros").then(r => {
+      if (!r.ok) throw new Error();
+      return r.json();
+    }).then(d => {
+      setMarcas(d || []);
+      setLoadingMarcas(false);
+    }).catch(() => {
+      setErr("Erro ao carregar marcas. Verifique sua conexão.");
+      setLoadingMarcas(false);
+    });
   }, []);
   useEffect(() => {
     if (!marca) return;
@@ -1428,26 +1439,36 @@ function FipeModal({
     setAnos([]);
     setAno("");
     setResult(null);
-    fetch(`https://brasilapi.com.br/api/fipe/marcas/v1/carros/${marca}/modelos`).then(r => r.json()).then(d => setModelos(d.modelos || [])).catch(() => setErr("Erro ao carregar modelos."));
+    setErr("");
+    fetch(`https://brasilapi.com.br/api/fipe/marcas/v1/carros/${marca}/modelos`).then(r => {
+      if (!r.ok) throw new Error();
+      return r.json();
+    }).then(d => setModelos(d.modelos || [])).catch(() => setErr("Erro ao carregar modelos."));
   }, [marca]);
   useEffect(() => {
     if (!modelo) return;
     setAnos([]);
     setAno("");
     setResult(null);
-    fetch(`https://brasilapi.com.br/api/fipe/marcas/v1/carros/${marca}/modelos/${modelo}/anos`).then(r => r.json()).then(setAnos).catch(() => setErr("Erro ao carregar anos."));
+    setErr("");
+    fetch(`https://brasilapi.com.br/api/fipe/marcas/v1/carros/${marca}/modelos/${modelo}/anos`).then(r => {
+      if (!r.ok) throw new Error();
+      return r.json();
+    }).then(d => setAnos(d || [])).catch(() => setErr("Erro ao carregar anos."));
   }, [modelo, marca]);
   async function buscar() {
+    if (!ano) return;
     setLoading(true);
     setErr("");
     setResult(null);
     try {
-      const r = await fetch(`https://brasilapi.com.br/api/fipe/preco/v1/${ano}`);
-      if (!r.ok) throw new Error("não encontrado");
+      const url = `https://brasilapi.com.br/api/fipe/marcas/v1/carros/${marca}/modelos/${modelo}/anos/${ano}`;
+      const r = await fetch(url);
+      if (!r.ok) throw new Error("Não encontrado");
       const d = await r.json();
       setResult(Array.isArray(d) ? d[0] : d);
     } catch (e) {
-      setErr("Não foi possível obter o valor FIPE para esta configuração.");
+      setErr("Não foi possível obter o valor FIPE. Tente outra combinação.");
     }
     setLoading(false);
   }
@@ -1469,7 +1490,13 @@ function FipeModal({
       borderRadius: 7,
       padding: "8px 11px"
     }
-  }, err), /*#__PURE__*/React.createElement(Sel, {
+  }, err), loadingMarcas ? /*#__PURE__*/React.createElement("div", {
+    style: {
+      textAlign: "center",
+      padding: "20px 0",
+      color: C.textMuted
+    }
+  }, "Carregando marcas...") : /*#__PURE__*/React.createElement(Sel, {
     label: "Marca",
     value: marca,
     onChange: setMarca,
@@ -1477,7 +1504,7 @@ function FipeModal({
       v: "",
       l: "Selecione a marca"
     }, ...marcas.map(m => ({
-      v: m.codigo,
+      v: String(m.codigo),
       l: m.nome
     }))]
   }), modelos.length > 0 && /*#__PURE__*/React.createElement(Sel, {
@@ -1488,7 +1515,7 @@ function FipeModal({
       v: "",
       l: "Selecione o modelo"
     }, ...modelos.map(m => ({
-      v: m.codigo,
+      v: String(m.codigo),
       l: m.nome
     }))]
   }), anos.length > 0 && /*#__PURE__*/React.createElement(Sel, {
@@ -1502,10 +1529,10 @@ function FipeModal({
       v: a.codigo,
       l: a.nome
     }))]
-  }), /*#__PURE__*/React.createElement(Btn, {
+  }), anos.length > 0 && /*#__PURE__*/React.createElement(Btn, {
     onClick: buscar,
     disabled: !ano || loading
-  }, loading ? "Consultando..." : "🔍 Consultar"), result && /*#__PURE__*/React.createElement("div", {
+  }, loading ? "Consultando..." : "🔍 Consultar FIPE"), result && /*#__PURE__*/React.createElement("div", {
     style: {
       background: C.success + "18",
       border: `1px solid ${C.success}44`,
@@ -3846,6 +3873,14 @@ function CarDetail({
     setSaved(true);
     setTimeout(() => setSaved(false), 1600);
   }
+  function changeTab(t) {
+    setTab(t);
+    setShowCats(false);
+    window.scrollTo({
+      top: 0,
+      behavior: "instant"
+    });
+  }
   function approve() {
     setCar(p => {
       const n = addHist({
@@ -3931,6 +3966,7 @@ function CarDetail({
       background: C.card,
       borderBottom: `1px solid ${C.border}`,
       padding: "10px 14px",
+      paddingTop: "calc(10px + env(safe-area-inset-top))",
       position: "sticky",
       top: 0,
       zIndex: 100
@@ -4176,8 +4212,7 @@ function CarDetail({
     return /*#__PURE__*/React.createElement("button", {
       key: k,
       onClick: () => {
-        setTab(k);
-        setShowCats(false);
+        changeTab(k);
       },
       style: {
         background: tab === k ? v.col + "22" : C.bg,
@@ -4240,8 +4275,7 @@ function CarDetail({
         if (it.k === "prep") {
           setShowCats(true);
         } else {
-          setTab(it.k);
-          setShowCats(false);
+          changeTab(it.k);
         }
       },
       active: it.k === activeNav
@@ -4268,26 +4302,98 @@ function CarCard({
   const dc = car.status === "Vendido" ? C.textDim : dayColor(days);
   const alerta = days > 30 && car.status !== "Vendido";
   const pecasPend = (car.pecas || []).filter(p => p.status === "Necessária" || p.status === "Orçada").length;
+  const stCol = ST_COL[car.status] || C.border;
+  const foto = car.fotos && car.fotos.length > 0 ? car.fotos[0].url : null;
+  const temFoto = !!foto;
   return /*#__PURE__*/React.createElement("div", {
     onClick: onClick,
     style: {
       background: C.card,
       border: `1px solid ${alerta ? C.warning : C.border}`,
-      borderRadius: 12,
-      padding: 14,
+      borderRadius: 14,
+      overflow: "hidden",
       cursor: "pointer",
-      transition: "border-color .2s"
+      transition: "border-color .2s",
+      boxShadow: "0 2px 8px #0003"
     }
   }, /*#__PURE__*/React.createElement("div", {
     style: {
       display: "flex",
-      justifyContent: "space-between",
-      alignItems: "flex-start",
-      marginBottom: 7
+      height: 120
     }
   }, /*#__PURE__*/React.createElement("div", {
     style: {
+      width: 130,
+      flexShrink: 0,
+      position: "relative",
+      background: C.bg,
+      overflow: "hidden"
+    }
+  }, temFoto ? /*#__PURE__*/React.createElement("img", {
+    src: foto,
+    alt: "",
+    style: {
+      width: "100%",
+      height: "100%",
+      objectFit: "cover",
+      display: "block"
+    }
+  }) : /*#__PURE__*/React.createElement("div", {
+    style: {
+      width: "100%",
+      height: "100%",
+      display: "flex",
+      alignItems: "center",
+      justifyContent: "center",
+      background: C.border + "40"
+    }
+  }, /*#__PURE__*/React.createElement("span", {
+    style: {
+      fontSize: 36
+    }
+  }, "\uD83D\uDE97")), /*#__PURE__*/React.createElement("div", {
+    style: {
+      position: "absolute",
+      bottom: 5,
+      left: 5,
+      background: "#000a",
+      borderRadius: 5,
+      padding: "2px 6px",
+      fontSize: 9,
+      color: dc,
+      fontWeight: 700
+    }
+  }, "\u23F1 ", days, "d"), car.fotos && car.fotos.length > 1 && /*#__PURE__*/React.createElement("div", {
+    style: {
+      position: "absolute",
+      top: 5,
+      right: 5,
+      background: "#000a",
+      borderRadius: 5,
+      padding: "2px 6px",
+      fontSize: 9,
+      color: "#fff",
+      fontWeight: 700
+    }
+  }, "\uD83D\uDCF8 ", car.fotos.length)), /*#__PURE__*/React.createElement("div", {
+    style: {
       flex: 1,
+      padding: "10px 12px",
+      display: "flex",
+      flexDirection: "column",
+      justifyContent: "space-between",
+      minWidth: 0
+    }
+  }, /*#__PURE__*/React.createElement("div", null, /*#__PURE__*/React.createElement("div", {
+    style: {
+      display: "flex",
+      justifyContent: "space-between",
+      alignItems: "flex-start",
+      gap: 6,
+      marginBottom: 3
+    }
+  }, /*#__PURE__*/React.createElement("div", {
+    style: {
       minWidth: 0
     }
   }, car.marca && /*#__PURE__*/React.createElement("div", {
@@ -4304,51 +4410,62 @@ function CarCard({
       color: C.text,
       whiteSpace: "nowrap",
       overflow: "hidden",
-      textOverflow: "ellipsis"
+      textOverflow: "ellipsis",
+      lineHeight: 1.2
     }
-  }, car.name || "— Sem nome —"), /*#__PURE__*/React.createElement("div", {
+  }, car.name || "Sem nome")), /*#__PURE__*/React.createElement("span", {
     style: {
-      fontSize: 11,
-      color: C.textMuted,
-      marginTop: 1
-    }
-  }, car.plate || "Sem placa", car.year ? ` · ${car.year}` : "", car.color ? ` · ${car.color}` : "")), /*#__PURE__*/React.createElement("div", {
-    style: {
-      display: "flex",
-      flexDirection: "column",
-      alignItems: "flex-end",
-      gap: 4,
-      flexShrink: 0,
-      marginLeft: 8
-    }
-  }, /*#__PURE__*/React.createElement("span", {
-    style: {
-      background: (ST_COL[car.status] || C.border) + "22",
-      color: ST_COL[car.status] || C.text,
+      background: stCol + "22",
+      color: stCol,
       borderRadius: 20,
-      padding: "2px 8px",
+      padding: "2px 7px",
       fontSize: 9,
       fontWeight: 700,
-      whiteSpace: "nowrap"
+      whiteSpace: "nowrap",
+      flexShrink: 0
     }
-  }, car.status), /*#__PURE__*/React.createElement("span", {
+  }, car.status)), /*#__PURE__*/React.createElement("div", {
     style: {
-      fontSize: 9,
-      color: dc,
-      fontWeight: 700
+      fontSize: 11,
+      color: C.textMuted
     }
-  }, "\u23F1 ", days, "d"))), /*#__PURE__*/React.createElement("div", {
+  }, car.plate || "—", car.year ? ` · ${car.year}` : "", car.color ? ` · ${car.color}` : "")), car.precoVenda ? /*#__PURE__*/React.createElement("div", {
+    style: {
+      fontSize: 16,
+      fontWeight: 800,
+      color: C.success,
+      marginTop: 2
+    }
+  }, fmt(car.precoVenda)) : /*#__PURE__*/React.createElement("div", {
+    style: {
+      fontSize: 11,
+      color: C.textDim,
+      marginTop: 2
+    }
+  }, "Pre\xE7o n\xE3o definido"))), /*#__PURE__*/React.createElement("div", {
+    style: {
+      padding: "8px 12px 10px",
+      borderTop: `1px solid ${C.border}`
+    }
+  }, /*#__PURE__*/React.createElement("div", {
     style: {
       display: "flex",
-      gap: 5,
+      justifyContent: "space-between",
+      alignItems: "center",
+      marginBottom: 5
+    }
+  }, /*#__PURE__*/React.createElement("div", {
+    style: {
+      display: "flex",
+      gap: 4,
       flexWrap: "wrap",
-      marginBottom: 7
+      flex: 1
     }
   }, car.loja && car.loja !== "Premier Multimarcas" && /*#__PURE__*/React.createElement("span", {
     style: {
       background: C.info + "20",
       color: C.info,
-      borderRadius: 10,
+      borderRadius: 8,
       padding: "1px 7px",
       fontSize: 9,
       fontWeight: 700
@@ -4357,7 +4474,7 @@ function CarCard({
     style: {
       background: C.warning + "20",
       color: C.warning,
-      borderRadius: 10,
+      borderRadius: 8,
       padding: "1px 7px",
       fontSize: 9,
       fontWeight: 700
@@ -4366,7 +4483,7 @@ function CarCard({
     style: {
       background: C.error + "20",
       color: C.error,
-      borderRadius: 10,
+      borderRadius: 8,
       padding: "1px 7px",
       fontSize: 9,
       fontWeight: 700
@@ -4375,31 +4492,18 @@ function CarCard({
     style: {
       background: C.warning + "20",
       color: C.warning,
-      borderRadius: 10,
+      borderRadius: 8,
       padding: "1px 7px",
       fontSize: 9,
       fontWeight: 700
     }
-  }, "\u26A0\uFE0F Parado ", days, "d")), /*#__PURE__*/React.createElement("div", {
-    style: {
-      marginBottom: 6
-    }
-  }, /*#__PURE__*/React.createElement("div", {
-    style: {
-      display: "flex",
-      justifyContent: "space-between",
-      marginBottom: 3
-    }
-  }, /*#__PURE__*/React.createElement("span", {
-    style: {
-      fontSize: 10,
-      color: C.textMuted
-    }
-  }, "Prepara\xE7\xE3o"), /*#__PURE__*/React.createElement("span", {
+  }, "\u26A0\uFE0F ", days, "d parado")), /*#__PURE__*/React.createElement("span", {
     style: {
       fontSize: 11,
-      color: pct === 100 ? C.success : C.red,
-      fontWeight: 700
+      fontWeight: 700,
+      color: pct === 100 ? C.success : C.textMuted,
+      flexShrink: 0,
+      marginLeft: 6
     }
   }, pct, "%")), /*#__PURE__*/React.createElement("div", {
     style: {
@@ -4416,42 +4520,10 @@ function CarCard({
       borderRadius: 2,
       transition: "width .4s"
     }
-  }))), car.fotos && car.fotos.length > 0 && /*#__PURE__*/React.createElement("div", {
+  })), car.status === "Aguardando Aprovação" && CAN.approve(user.role) && /*#__PURE__*/React.createElement("div", {
     style: {
-      display: "flex",
-      gap: 3,
-      marginTop: 7,
-      overflow: "hidden"
-    }
-  }, car.fotos.slice(0, 4).map((f, i) => /*#__PURE__*/React.createElement("img", {
-    key: i,
-    src: f.url,
-    alt: "",
-    style: {
-      width: 42,
-      height: 32,
-      objectFit: "cover",
-      borderRadius: 4,
-      border: `1px solid ${C.border}`,
-      flexShrink: 0
-    }
-  })), car.fotos.length > 4 && /*#__PURE__*/React.createElement("div", {
-    style: {
-      width: 42,
-      height: 32,
-      borderRadius: 4,
-      background: C.border,
-      display: "flex",
-      alignItems: "center",
-      justifyContent: "center",
-      fontSize: 9,
-      color: C.textMuted,
-      flexShrink: 0
-    }
-  }, "+", car.fotos.length - 4)), car.status === "Aguardando Aprovação" && CAN.approve(user.role) && /*#__PURE__*/React.createElement("div", {
-    style: {
-      marginTop: 8,
-      padding: "4px 8px",
+      marginTop: 6,
+      padding: "3px 8px",
       background: C.warning + "22",
       border: `1px solid ${C.warning}44`,
       borderRadius: 5,
@@ -4459,15 +4531,7 @@ function CarCard({
       color: C.warning,
       fontWeight: 700
     }
-  }, "\u23F3 Aguardando sua aprova\xE7\xE3o"), /*#__PURE__*/React.createElement("div", {
-    style: {
-      fontSize: 9,
-      color: C.textDim,
-      marginTop: 8,
-      paddingTop: 6,
-      borderTop: `1px solid ${C.border}`
-    }
-  }, "Por ", car.createdBy, " \xB7 ", new Date(car.createdAt).toLocaleDateString("pt-BR")));
+  }, "\u23F3 Aguardando sua aprova\xE7\xE3o")));
 }
 
 // ═══ ADD CAR FORM ════════════════════════════════════════════════
@@ -5182,6 +5246,7 @@ function Dashboard({
       background: C.card,
       borderBottom: `1px solid ${C.border}`,
       padding: "10px 14px",
+      paddingTop: "calc(10px + env(safe-area-inset-top))",
       display: "flex",
       alignItems: "center",
       justifyContent: "space-between",
@@ -5384,8 +5449,8 @@ function Dashboard({
     onClick: onAddCar
   }, "\u2795 Cadastrar primeiro ve\xEDculo"))) : /*#__PURE__*/React.createElement("div", {
     style: {
-      display: "grid",
-      gridTemplateColumns: "repeat(auto-fill,minmax(280px,1fr))",
+      display: "flex",
+      flexDirection: "column",
       gap: 10
     }
   }, fil.map(car => /*#__PURE__*/React.createElement(CarCard, {
