@@ -1935,7 +1935,6 @@ function SuppliersModal({
 }
 
 // ═══ PLACA FIPE MODAL ═══════════════════════════════════════════
-const PLACAFIPE_TOKEN = "FFBC0E9F50A6860C514332E802202E0E2DAE3A12814E866873F7486ACFF0D832";
 function PlacaFipeModal({
   onSelect,
   onClose
@@ -1949,10 +1948,10 @@ function PlacaFipeModal({
     if (p.length < 7) { setErr("Placa inválida. Ex: ABC1234 ou ABC1D23"); return; }
     setLoading(true); setErr(""); setResult(null);
     try {
-      const resp = await fetch("https://api.placafipe.com.br/getplacafipe", {
+      const resp = await fetch("https://vjmmobduzchqnjrskffk.supabase.co/functions/v1/placafipe-proxy", {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ placa: p, token: PLACAFIPE_TOKEN })
+        headers: { "Content-Type": "application/json", "Authorization": "Bearer " + SB_KEY },
+        body: JSON.stringify({ placa: p })
       });
       const data = await resp.json();
       if (data.codigo !== 1) { setErr(data.msg || "Veículo não encontrado."); setLoading(false); return; }
@@ -2049,10 +2048,10 @@ function PesquisaPlacaModal({
     if (p.length < 7) { setErr("Placa inválida."); return; }
     setLoading(true); setErr(""); setApiResult(null);
     try {
-      const resp = await fetch("https://api.placafipe.com.br/getplacafipe", {
+      const resp = await fetch("https://vjmmobduzchqnjrskffk.supabase.co/functions/v1/placafipe-proxy", {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ placa: p, token: PLACAFIPE_TOKEN })
+        headers: { "Content-Type": "application/json", "Authorization": "Bearer " + SB_KEY },
+        body: JSON.stringify({ placa: p })
       });
       const data = await resp.json();
       if (data.codigo !== 1) { setErr(data.msg || "Não encontrado."); } else { setApiResult(data); }
@@ -3749,7 +3748,8 @@ function FinancialTab({
   suppliers,
   onChange,
   onMarkSold,
-  onOpenFipe
+  onOpenFipe,
+  onOpenPlacaFipe
 }) {
   const [nd, setNd] = useState("");
   const [nv, setNv] = useState("");
@@ -4076,19 +4076,16 @@ function FinancialTab({
     value: car.tabelaFipe || "",
     onChange: v => onChange("tabelaFipe", v),
     type: "number"
-  }), /*#__PURE__*/React.createElement("button", {
-    onClick: onOpenFipe,
-    style: {
-      marginTop: 4,
-      background: "none",
-      border: "none",
-      color: C.info,
-      cursor: "pointer",
-      fontSize: 11,
-      fontFamily: "inherit",
-      padding: 0
-    }
-  }, "\uD83D\uDD0D Buscar via API")), /*#__PURE__*/React.createElement(Inp, {
+  }), /*#__PURE__*/React.createElement("div", { style: { display: "flex", gap: 8, marginTop: 4 } },
+    /*#__PURE__*/React.createElement("button", {
+      onClick: onOpenPlacaFipe,
+      style: { background: "none", border: "none", color: C.red, cursor: "pointer", fontSize: 11, fontFamily: "inherit", padding: 0, fontWeight: 700 }
+    }, "\uD83D\uDD0D Consultar por Placa"),
+    /*#__PURE__*/React.createElement("button", {
+      onClick: onOpenFipe,
+      style: { background: "none", border: "none", color: C.info, cursor: "pointer", fontSize: 11, fontFamily: "inherit", padding: 0 }
+    }, "Buscar por modelo")
+  )), /*#__PURE__*/React.createElement(Inp, {
     label: "Pre\xE7o de venda (R$)",
     value: car.precoVenda || "",
     onChange: v => onChange("precoVenda", v),
@@ -4624,14 +4621,24 @@ function CarDetail({
   function handlePlacaFipeSelect(data) {
     const info = data.info;
     const fipe = data.fipe;
-    if (info.marca) upField("marca", info.marca.charAt(0) + info.marca.slice(1).toLowerCase());
-    if (info.modelo) upField("name", info.modelo);
-    if (info.ano_modelo || info.ano) upField("year", String(info.ano_modelo || info.ano));
-    if (info.cor) upField("color", info.cor);
-    if (info.combustivel) upField("combustivel", info.combustivel.split("/")[0].trim());
-    if (fipe) upField("tabelaFipe", String(fipe.valor));
+    // Build all updates in one setCar call so a single autoSave fires
+    setCar(p => {
+      const n = {
+        ...p,
+        ...(info.placa ? { plate: info.placa } : {}),
+        ...(info.marca ? { marca: info.marca.charAt(0) + info.marca.slice(1).toLowerCase() } : {}),
+        ...(info.modelo ? { name: info.modelo } : {}),
+        ...((info.ano_modelo || info.ano) ? { year: String(info.ano_modelo || info.ano) } : {}),
+        ...(info.cor ? { color: info.cor } : {}),
+        ...(info.combustivel ? { combustivel: info.combustivel.split("/")[0].trim() } : {}),
+        ...(fipe ? { tabelaFipe: String(fipe.valor) } : {}),
+      };
+      autoSave(n);
+      return n;
+    });
     setShowPlacaFipe(false);
-    pushNotif("✅ Dados preenchidos pela placa!", "success");
+    pushNotif("✅ Dados e FIPE preenchidos pela placa!", "success");
+    pushLog(`Consulta por placa: ${info.placa || ""} — ${info.modelo || ""}`, user.name, "info", "todos");
   }
   const days = daysSince(car.createdAt);
   const dc = car.status === "Vendido" ? C.textDim : dayColor(days);
@@ -4877,7 +4884,8 @@ function CarDetail({
     suppliers: suppliers || [],
     onChange: upField,
     onMarkSold: markSold,
-    onOpenFipe: () => setShowFipe(true)
+    onOpenFipe: () => setShowFipe(true),
+    onOpenPlacaFipe: () => setShowPlacaFipe(true)
   }), tab === "historico" && /*#__PURE__*/React.createElement(HistoricoTab, {
     car: car
   }), tab === "aprovacao" && CAN.approve(user.role) && /*#__PURE__*/React.createElement(ApprovalTab, {
@@ -5273,16 +5281,16 @@ function AddCarForm({
     const fipe = data.fipe;
     setCar(p => ({
       ...p,
-      plate: info.placa || p.plate,
-      marca: info.marca ? info.marca.charAt(0) + info.marca.slice(1).toLowerCase() : p.marca,
-      name: info.modelo || p.name,
-      year: String(info.ano_modelo || info.ano || p.year),
-      color: info.cor || p.color,
+      plate:       info.placa || p.plate,
+      marca:       info.marca ? info.marca.charAt(0) + info.marca.slice(1).toLowerCase() : p.marca,
+      name:        info.modelo || p.name,
+      year:        String(info.ano_modelo || info.ano || p.year),
+      color:       info.cor || p.color,
       combustivel: info.combustivel ? info.combustivel.split("/")[0].trim() : p.combustivel,
-      tabelaFipe: fipe ? String(fipe.valor) : p.tabelaFipe
+      tabelaFipe:  fipe ? String(fipe.valor) : p.tabelaFipe
     }));
     setShowPlacaFipe(false);
-    pushNotif("✅ Dados preenchidos pela placa!", "success");
+    pushNotif("✅ Dados e FIPE preenchidos pela placa!", "success");
   }
   return /*#__PURE__*/React.createElement("div", {
     style: {
