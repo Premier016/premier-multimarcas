@@ -1948,13 +1948,13 @@ function PlacaFipeModal({
     if (p.length < 7) { setErr("Placa inválida. Ex: ABC1234 ou ABC1D23"); return; }
     setLoading(true); setErr(""); setResult(null);
     try {
-      const resp = await fetch("https://vjmmobduzchqnjrskffk.supabase.co/functions/v1/placafipe-proxy", {
+      const resp = await fetch("/api/placafipe", {
         method: "POST",
-        headers: { "Content-Type": "application/json", "Authorization": "Bearer " + SB_KEY },
+        headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ placa: p })
       });
       const data = await resp.json();
-      if (data.codigo !== 1) { setErr(data.msg || "Veículo não encontrado."); setLoading(false); return; }
+      if (!resp.ok || data.codigo !== 1) { setErr(data.msg || "Veículo não encontrado."); setLoading(false); return; }
       setResult(data);
     } catch(e) { setErr("Erro de conexão. Verifique sua internet."); }
     setLoading(false);
@@ -2048,9 +2048,9 @@ function PesquisaPlacaModal({
     if (p.length < 7) { setErr("Placa inválida."); return; }
     setLoading(true); setErr(""); setApiResult(null);
     try {
-      const resp = await fetch("https://vjmmobduzchqnjrskffk.supabase.co/functions/v1/placafipe-proxy", {
+      const resp = await fetch("/api/placafipe", {
         method: "POST",
-        headers: { "Content-Type": "application/json", "Authorization": "Bearer " + SB_KEY },
+        headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ placa: p })
       });
       const data = await resp.json();
