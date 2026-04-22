@@ -74,7 +74,7 @@ function applyTheme(dark) {
 }
 
 // ═══ CONSTANTS ══════════════════════════════════════════════════
-const LOJAS = ["Premier Multimarcas", "Auto Fácil"];
+const LOJAS = ["Premier Multimarcas", "Auto Fácil", "L.O.T"];
 const PRESTADORES = ["Sem prestador", "Mecânica", "Funilaria", "Tapeçaria", "Estética", "Elétrica", "Pneus/Rodas", "Martelinho", "Lavagem", "Outro"];
 const STATUSES = ["Entrada", "Em Preparação", "Aguardando Aprovação", "Pronto para Venda", "Vendido"];
 const ST_COL = {
@@ -89,13 +89,13 @@ const FORN_TIPOS = ["Funilaria", "Mecânica", "Tapeçaria", "Auto Elétrica", "P
 const DOCS_LIST = ["CRLV", "Nota Fiscal de Compra", "Chave Principal", "Chave Reserva", "Laudo Cautelar", "Rastreador", "Manual do Proprietário", "DUT/Transferência"];
 const PECA_STATUS = ["Necessária", "Orçada", "Comprada", "Instalada"];
 const URGENCIA = ["Alta", "Média", "Baixa"];
+const COMBUSTIVEIS = ["Flex", "Gasolina", "Etanol", "Diesel", "GNV", "Elétrico", "Híbrido"];
+const OPCIONAIS_LISTA = ["Ar-condicionado", "Direção hidráulica", "Vidros elétricos", "Travas elétricas", "Teto solar", "Central multimídia", "Câmera de ré", "Sensor de estacionamento", "Rodas de liga leve", "Alarme", "Retrovisores elétricos", "Bancos em couro", "GPS/Navegação", "Bluetooth", "Volante multifuncional", "Piloto automático", "Farol de neblina"];
 const URG_COL = {
   Alta: "#EF4444",
   Média: "#F59E0B",
   Baixa: "#10B981"
 };
-const COMBUSTIVEIS = ["Flex", "Gasolina", "Etanol", "Diesel", "GNV", "Elétrico", "Híbrido"];
-const OPCIONAIS_LISTA = ["Ar-condicionado", "Direção hidráulica", "Vidros elétricos", "Travas elétricas", "Teto solar", "Central multimídia", "Câmera de ré", "Sensor de estacionamento", "Rodas de liga leve", "Alarme", "Retrovisores elétricos", "Bancos em couro", "GPS/Navegação", "Bluetooth", "Volante multifuncional", "Piloto automático", "Farol de neblina", "Ar-condicionado digital", "Tração 4x4"];
 const ROLE_LABEL = {
   proprietario: "👑 Proprietário",
   gerente: "⭐ Gerente",
@@ -330,8 +330,6 @@ function createCar(user) {
         name: n,
         status: "pendente",
         obs: "",
-        avDescricao: "",
-        avFoto: "",
         fornecedor: "",
         changedBy: "",
         changedAt: ""
@@ -458,16 +456,9 @@ function NotifToasts({
 
 // ═══ ACTIVITY LOG ═══════════════════════════════════════════════
 let _addLog = null;
-// vis: "todos" = só proprietário/gerente vê | "operacional" = todos veem
+// vis: "todos" = proprietário/gerente only | "operacional" = all roles see
 function pushLog(acao, por, tipo = "info", vis = "todos") {
-  if (_addLog) _addLog({
-    id: uid(),
-    acao,
-    por,
-    em: nowStr(),
-    tipo,
-    vis
-  });
+  if (_addLog) _addLog({ id: uid(), acao, por, em: nowStr(), tipo, vis });
 }
 
 // ═══ PULL TO REFRESH ════════════════════════════════════════════
@@ -613,7 +604,7 @@ function NotificacoesModal({
   onClose
 }) {
   const isAdmin = user && ["proprietario", "gerente"].includes(user.role);
-  const filtered = isAdmin ? logs : logs.filter(l => l.vis === "operacional");
+  const filtered = isAdmin ? logs : logs.filter(l => l.vis === "operacional" || !l.vis);
   const TIPO_COL = {
     info: C.info,
     success: C.success,
@@ -647,11 +638,11 @@ function NotificacoesModal({
       fontSize: 12,
       color: C.textMuted
     }
-  }, filtered.length, " registro(s)", !isAdmin ? " (visíveis para seu perfil)" : ""), filtered.length > 0 && isAdmin && /*#__PURE__*/React.createElement(Btn, {
+  }, filtered.length, " registro(s)", !isAdmin ? " (seu perfil)" : ""), filtered.length > 0 && isAdmin && /*#__PURE__*/React.createElement(Btn, {
     onClick: onClear,
     variant: "ghost",
     small: true
-  }, "Limpar tudo")), filtered.length === 0 ? /*#__PURE__*/React.createElement("div", {
+  }, "Limpar tudo")), logs.length === 0 ? /*#__PURE__*/React.createElement("div", {
     style: {
       textAlign: "center",
       padding: "30px 0",
@@ -1521,11 +1512,15 @@ function UserManagementModal({
     }
     let upd;
     if (editing) {
-      upd = list.map(u => u.id === editing ? { ...u, ...form } : u);
-      pushLog(`Usuário editado: ${form.name} (${form.role})`, "Sistema", "info", "todos");
+      upd = list.map(u => u.id === editing ? {
+        ...u,
+        ...form
+      } : u);
     } else {
-      upd = [...list, { ...form, id: uid() }];
-      pushLog(`Usuário criado: ${form.name} (${form.role})`, "Sistema", "success", "todos");
+      upd = [...list, {
+        ...form,
+        id: uid()
+      }];
     }
     setList(upd);
     onSave(upd);
@@ -1544,19 +1539,18 @@ function UserManagementModal({
     });
   }
   function toggleAtivo(id) {
-    const u = list.find(x => x.id === id);
-    const upd = list.map(x => x.id === id ? { ...x, ativo: !x.ativo } : x);
+    const upd = list.map(u => u.id === id ? {
+      ...u,
+      ativo: !u.ativo
+    } : u);
     setList(upd);
     onSave(upd);
-    if (u) pushLog(`Usuário ${u.ativo ? "desativado" : "ativado"}: ${u.name}`, "Sistema", "warning", "todos");
   }
   function del(id) {
     if (!window.confirm("Remover usuário permanentemente?")) return;
-    const u = list.find(x => x.id === id);
-    const upd = list.filter(x => x.id !== id);
+    const upd = list.filter(u => u.id !== id);
     setList(upd);
     onSave(upd);
-    if (u) pushLog(`Usuário removido: ${u.name}`, "Sistema", "warning", "todos");
   }
   return /*#__PURE__*/React.createElement(Modal, {
     title: "\uD83D\uDC64 Gerenciar Usu\xE1rios",
@@ -1940,6 +1934,183 @@ function SuppliersModal({
   }, "Remover"))))));
 }
 
+// ═══ PLACA FIPE MODAL ═══════════════════════════════════════════
+const PLACAFIPE_TOKEN = "FFBC0E9F50A6860C514332E802202E0E2DAE3A12814E866873F7486ACFF0D832";
+function PlacaFipeModal({
+  onSelect,
+  onClose
+}) {
+  const [placa, setPlaca] = useState("");
+  const [loading, setLoading] = useState(false);
+  const [result, setResult] = useState(null);
+  const [err, setErr] = useState("");
+  async function consultar() {
+    const p = placa.replace(/[^a-zA-Z0-9]/g, "").toUpperCase();
+    if (p.length < 7) { setErr("Placa inválida. Ex: ABC1234 ou ABC1D23"); return; }
+    setLoading(true); setErr(""); setResult(null);
+    try {
+      const resp = await fetch("https://api.placafipe.com.br/getplacafipe", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ placa: p, token: PLACAFIPE_TOKEN })
+      });
+      const data = await resp.json();
+      if (data.codigo !== 1) { setErr(data.msg || "Veículo não encontrado."); setLoading(false); return; }
+      setResult(data);
+    } catch(e) { setErr("Erro de conexão. Verifique sua internet."); }
+    setLoading(false);
+  }
+  const info = result && result.informacoes_veiculo;
+  const melhorFipe = result && result.fipe && result.fipe.length > 0
+    ? result.fipe.reduce((best, cur) => parseFloat(cur.similaridade) > parseFloat(best.similaridade) ? cur : best, result.fipe[0])
+    : null;
+  return /*#__PURE__*/React.createElement(Modal, { title: "\uD83D\uDD0D Consulta por Placa", onClose: onClose, width: 520 },
+    /*#__PURE__*/React.createElement("div", { style: { display: "flex", flexDirection: "column", gap: 13 } },
+      /*#__PURE__*/React.createElement("div", { style: { display: "flex", gap: 9 } },
+        /*#__PURE__*/React.createElement("div", { style: { flex: 1 } },
+          /*#__PURE__*/React.createElement(Inp, { label: "Placa do veículo", value: placa, onChange: v => setPlaca(v.toUpperCase()), placeholder: "ABC-1234 ou ABC1D23" })
+        ),
+        /*#__PURE__*/React.createElement(Btn, {
+          onClick: consultar, disabled: loading || placa.length < 7,
+          style: { alignSelf: "flex-end" }
+        }, loading ? "Consultando..." : "\uD83D\uDD0D Consultar")
+      ),
+      err && /*#__PURE__*/React.createElement("div", {
+        style: { color: C.warning, fontSize: 12, background: C.warning + "15", borderRadius: 7, padding: "8px 11px" }
+      }, err),
+      info && /*#__PURE__*/React.createElement("div", { style: { display: "flex", flexDirection: "column", gap: 10 } },
+        /*#__PURE__*/React.createElement("div", {
+          style: { background: C.bg, border: `1px solid ${C.border}`, borderRadius: 10, padding: 14 }
+        },
+          /*#__PURE__*/React.createElement("div", { style: { fontWeight: 700, color: C.red, fontSize: 11, marginBottom: 10, letterSpacing: 1 } }, "DADOS DO VEÍCULO"),
+          /*#__PURE__*/React.createElement("div", { style: { display: "grid", gridTemplateColumns: "1fr 1fr", gap: 7, fontSize: 12 } },
+            [
+              ["Marca", info.marca],
+              ["Modelo", info.modelo],
+              ["Ano", info.ano_modelo || info.ano],
+              ["Cor", info.cor],
+              ["Combustível", info.combustivel],
+              ["Município", `${info.municipio}/${info.uf}`],
+              ["Placa", info.placa],
+              ["Segmento", info.sub_segmento || info.segmento]
+            ].map(([k,v]) => v && /*#__PURE__*/React.createElement("div", { key: k },
+              /*#__PURE__*/React.createElement("div", { style: { fontSize: 9, color: C.textMuted, fontWeight: 700, textTransform: "uppercase", letterSpacing: 0.5, marginBottom: 1 } }, k),
+              /*#__PURE__*/React.createElement("div", { style: { color: C.text, fontWeight: 600 } }, v)
+            ))
+          )
+        ),
+        melhorFipe && /*#__PURE__*/React.createElement("div", {
+          style: { background: C.success + "15", border: `1px solid ${C.success}44`, borderRadius: 10, padding: 14, textAlign: "center" }
+        },
+          /*#__PURE__*/React.createElement("div", { style: { fontSize: 10, color: C.textMuted, marginBottom: 4 } }, melhorFipe.mes_referencia, " · ", melhorFipe.modelo),
+          /*#__PURE__*/React.createElement("div", { style: { fontSize: 28, fontWeight: 800, color: C.success } },
+            "R$ ", Number(melhorFipe.valor).toLocaleString("pt-BR", { minimumFractionDigits: 2 })
+          ),
+          result.fipe.length > 1 && /*#__PURE__*/React.createElement("div", { style: { fontSize: 10, color: C.textMuted, marginTop: 4 } },
+            result.fipe.length, " versões encontradas"
+          )
+        ),
+        result.fipe && result.fipe.length > 1 && /*#__PURE__*/React.createElement("div", { style: { display: "flex", flexDirection: "column", gap: 6 } },
+          result.fipe.map((f, i) => /*#__PURE__*/React.createElement("div", {
+            key: i,
+            style: { background: C.bg, border: `1px solid ${C.border}`, borderRadius: 8, padding: "9px 12px", display: "flex", justifyContent: "space-between", alignItems: "center", gap: 10 }
+          },
+            /*#__PURE__*/React.createElement("div", { style: { flex: 1, minWidth: 0 } },
+              /*#__PURE__*/React.createElement("div", { style: { fontSize: 11, color: C.text, fontWeight: 600 } }, f.modelo),
+              /*#__PURE__*/React.createElement("div", { style: { fontSize: 9, color: C.textMuted } }, f.combustivel, " · ", f.ano_modelo, " · Sim: ", Math.round(parseFloat(f.similaridade)), "%")
+            ),
+            /*#__PURE__*/React.createElement("div", { style: { fontWeight: 800, color: C.success, fontSize: 13, flexShrink: 0 } },
+              "R$ ", Number(f.valor).toLocaleString("pt-BR", { minimumFractionDigits: 2 })
+            )
+          ))
+        ),
+        /*#__PURE__*/React.createElement(Btn, {
+          onClick: () => onSelect({ info, fipe: melhorFipe, allFipe: result.fipe }),
+          variant: "success", style: { width: "100%", justifyContent: "center" }
+        }, "\u2713 Usar estes dados")
+      )
+    )
+  );
+}
+
+// ═══ PESQUISA DE PLACA MODAL (dashboard) ════════════════════════
+function PesquisaPlacaModal({
+  cars,
+  onSelectCar,
+  onClose
+}) {
+  const [placa, setPlaca] = useState("");
+  const [loading, setLoading] = useState(false);
+  const [apiResult, setApiResult] = useState(null);
+  const [err, setErr] = useState("");
+  const found = placa.length >= 3 ? cars.filter(c => (c.plate || "").toUpperCase().includes(placa.toUpperCase())) : [];
+  async function consultarApi() {
+    const p = placa.replace(/[^a-zA-Z0-9]/g, "").toUpperCase();
+    if (p.length < 7) { setErr("Placa inválida."); return; }
+    setLoading(true); setErr(""); setApiResult(null);
+    try {
+      const resp = await fetch("https://api.placafipe.com.br/getplacafipe", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ placa: p, token: PLACAFIPE_TOKEN })
+      });
+      const data = await resp.json();
+      if (data.codigo !== 1) { setErr(data.msg || "Não encontrado."); } else { setApiResult(data); }
+    } catch(e) { setErr("Erro de conexão."); }
+    setLoading(false);
+  }
+  const info = apiResult && apiResult.informacoes_veiculo;
+  const melhorFipe = apiResult && apiResult.fipe && apiResult.fipe.length > 0
+    ? apiResult.fipe.reduce((b, c) => parseFloat(c.similaridade) > parseFloat(b.similaridade) ? c : b, apiResult.fipe[0])
+    : null;
+  return /*#__PURE__*/React.createElement(Modal, { title: "\uD83D\uDD0D Pesquisa de Placa", onClose: onClose, width: 540 },
+    /*#__PURE__*/React.createElement("div", { style: { display: "flex", flexDirection: "column", gap: 12 } },
+      /*#__PURE__*/React.createElement("div", { style: { display: "flex", gap: 9 } },
+        /*#__PURE__*/React.createElement("div", { style: { flex: 1 } },
+          /*#__PURE__*/React.createElement(Inp, { label: "Placa", value: placa, onChange: v => { setPlaca(v.toUpperCase()); setApiResult(null); setErr(""); }, placeholder: "Digite a placa..." })
+        ),
+        /*#__PURE__*/React.createElement(Btn, {
+          onClick: consultarApi, disabled: loading || placa.length < 7,
+          style: { alignSelf: "flex-end" }
+        }, loading ? "..." : "\uD83D\uDD0D API")
+      ),
+      err && /*#__PURE__*/React.createElement("div", { style: { color: C.warning, fontSize: 12, background: C.warning + "15", borderRadius: 7, padding: "8px 11px" } }, err),
+      found.length > 0 && /*#__PURE__*/React.createElement("div", { style: { display: "flex", flexDirection: "column", gap: 7 } },
+        /*#__PURE__*/React.createElement("div", { style: { fontSize: 10, color: C.textMuted, fontWeight: 700, letterSpacing: 1, textTransform: "uppercase" } }, "NO ESTOQUE (", found.length, ")"),
+        found.map(car => /*#__PURE__*/React.createElement("div", {
+          key: car.id,
+          onClick: () => { onSelectCar(car); onClose(); },
+          style: { background: C.bg, border: `1px solid ${C.border}`, borderRadius: 9, padding: "11px 13px", cursor: "pointer", display: "flex", justifyContent: "space-between", alignItems: "center" }
+        },
+          /*#__PURE__*/React.createElement("div", null,
+            /*#__PURE__*/React.createElement("div", { style: { fontWeight: 700, fontSize: 13, color: C.text } }, car.marca ? car.marca + " " : "", car.name),
+            /*#__PURE__*/React.createElement("div", { style: { fontSize: 11, color: C.textMuted } }, car.plate, " · ", car.year || "—", " · ", car.status)
+          ),
+          /*#__PURE__*/React.createElement("div", { style: { background: (ST_COL[car.status]||C.border)+"22", color: ST_COL[car.status]||C.textMuted, borderRadius: 20, padding: "2px 9px", fontSize: 9, fontWeight: 700 } }, car.status)
+        ))
+      ),
+      found.length === 0 && placa.length >= 3 && !info && /*#__PURE__*/React.createElement("div", {
+        style: { textAlign: "center", color: C.textDim, fontSize: 12, padding: "10px 0" }
+      }, "Nenhum veículo encontrado no estoque com essa placa."),
+      info && /*#__PURE__*/React.createElement("div", { style: { background: C.bg, border: `1px solid ${C.border}`, borderRadius: 10, padding: 14 } },
+        /*#__PURE__*/React.createElement("div", { style: { fontWeight: 700, color: C.red, fontSize: 11, marginBottom: 10, letterSpacing: 1 } }, "RESULTADO DA API"),
+        /*#__PURE__*/React.createElement("div", { style: { display: "grid", gridTemplateColumns: "1fr 1fr", gap: 7, fontSize: 12, marginBottom: 10 } },
+          [["Marca", info.marca], ["Modelo", info.modelo], ["Ano", info.ano_modelo||info.ano], ["Cor", info.cor], ["Combustível", info.combustivel], ["Município", `${info.municipio}/${info.uf}`]].map(([k,v]) => v && /*#__PURE__*/React.createElement("div", { key: k },
+            /*#__PURE__*/React.createElement("div", { style: { fontSize: 9, color: C.textMuted, fontWeight: 700, textTransform: "uppercase", marginBottom: 1 } }, k),
+            /*#__PURE__*/React.createElement("div", { style: { color: C.text, fontWeight: 600 } }, v)
+          ))
+        ),
+        melhorFipe && /*#__PURE__*/React.createElement("div", { style: { textAlign: "center", background: C.success + "15", borderRadius: 8, padding: 10 } },
+          /*#__PURE__*/React.createElement("div", { style: { fontSize: 10, color: C.textMuted } }, "FIPE"),
+          /*#__PURE__*/React.createElement("div", { style: { fontSize: 22, fontWeight: 800, color: C.success } },
+            "R$ ", Number(melhorFipe.valor).toLocaleString("pt-BR", { minimumFractionDigits: 2 })
+          )
+        )
+      )
+    )
+  );
+}
+
 // ═══ FIPE MODAL ═════════════════════════════════════════════════
 function FipeModal({
   onSelect,
@@ -2106,118 +2277,94 @@ function FipeModal({
 }
 
 // ═══ PRESTADOR CHECKLIST ════════════════════════════════════════
-const PREST_ITEMS = ["Veículo sem riscos ou amassados novos", "Vidros e espelhos intactos", "Rodas e pneus sem danos", "Interior sem novas avarias", "Serviço solicitado foi realizado", "Sem vazamentos visíveis", "Documentos do veículo presentes"];
+const PREST_ITEMS_DEFAULT = ["Veículo sem riscos ou amassados novos", "Vidros e espelhos intactos", "Rodas e pneus sem danos", "Interior sem novas avarias", "Serviço solicitado foi realizado", "Sem vazamentos visíveis", "Documentos do veículo presentes"];
 function PrestadorModal({
   car,
   user,
   onConfirm,
   onClose
 }) {
-  const [checks, setChecks] = useState(PREST_ITEMS.map(() => false));
-  const allOk = checks.every(Boolean);
-  function toggle(i) {
-    setChecks(c => {
-      const n = [...c];
-      n[i] = !n[i];
-      return n;
-    });
+  const [items, setItems] = useState(PREST_ITEMS_DEFAULT.map(t => ({ label: t, ok: false, obs: "", foto: "" })));
+  const [uploadingIdx, setUploadingIdx] = useState(null);
+  const [newLabel, setNewLabel] = useState("");
+  const allOk = items.every(it => it.ok);
+  function toggle(i) { setItems(p => p.map((it, j) => j === i ? { ...it, ok: !it.ok } : it)); }
+  function setObs(i, v) { setItems(p => p.map((it, j) => j === i ? { ...it, obs: v } : it)); }
+  function setFoto(i, v) { setItems(p => p.map((it, j) => j === i ? { ...it, foto: v } : it)); }
+  function addItem() {
+    if (!newLabel.trim()) return;
+    setItems(p => [...p, { label: newLabel.trim(), ok: false, obs: "", foto: "", custom: true }]);
+    setNewLabel("");
+  }
+  function removeItem(i) { setItems(p => p.filter((_, j) => j !== i)); }
+  async function uploadFoto(i, file) {
+    if (!file || !car.id) return;
+    setUploadingIdx(i);
+    try {
+      const res = await sbUpload(file, car.id, "prest-checklist-" + i + "-" + Date.now());
+      setFoto(i, res.url);
+      pushNotif("📸 Foto adicionada", "success");
+    } catch(e) { pushNotif("Erro ao enviar foto", "error"); }
+    setUploadingIdx(null);
   }
   return /*#__PURE__*/React.createElement("div", {
-    style: {
-      position: "fixed",
-      inset: 0,
-      background: "#000d",
-      zIndex: 400,
-      display: "flex",
-      alignItems: "flex-end"
-    }
+    style: { position: "fixed", inset: 0, background: "#000d", zIndex: 400, display: "flex", alignItems: "flex-end" }
   }, /*#__PURE__*/React.createElement("div", {
-    style: {
-      background: C.card,
-      borderRadius: "16px 16px 0 0",
-      width: "100%",
-      padding: 20,
-      paddingBottom: 30,
-      maxHeight: "85vh",
-      overflowY: "auto"
-    }
+    style: { background: C.card, borderRadius: "16px 16px 0 0", width: "100%", padding: 20, paddingBottom: 30, maxHeight: "90vh", overflowY: "auto" }
   }, /*#__PURE__*/React.createElement("div", {
-    style: {
-      fontWeight: 700,
-      color: C.warning,
-      fontSize: 14,
-      marginBottom: 4
-    }
+    style: { fontWeight: 700, color: C.warning, fontSize: 14, marginBottom: 4 }
   }, "\u26A0\uFE0F Checklist de Sa\xEDda"), /*#__PURE__*/React.createElement("div", {
-    style: {
-      color: C.textMuted,
-      fontSize: 12,
-      marginBottom: 16
-    }
-  }, "Confirme o estado do ve\xEDculo ao sair de ", /*#__PURE__*/React.createElement("b", {
-    style: {
-      color: C.text
-    }
-  }, car.prestadorAtual)), PREST_ITEMS.map((item, i) => /*#__PURE__*/React.createElement("div", {
+    style: { color: C.textMuted, fontSize: 12, marginBottom: 16 }
+  }, "Confirme o estado do ve\xEDculo ao sair de ", /*#__PURE__*/React.createElement("b", { style: { color: C.text } }, car.prestadorAtual)),
+  items.map((item, i) => /*#__PURE__*/React.createElement("div", {
     key: i,
-    onClick: () => toggle(i),
-    style: {
-      display: "flex",
-      alignItems: "center",
-      gap: 11,
-      padding: "10px 12px",
-      background: checks[i] ? C.success + "15" : C.bg,
-      border: `1px solid ${checks[i] ? C.success : C.border}`,
-      borderRadius: 9,
-      marginBottom: 7,
-      cursor: "pointer"
-    }
+    style: { background: item.ok ? C.success + "12" : C.bg, border: `1px solid ${item.ok ? C.success : C.border}`, borderRadius: 10, marginBottom: 8, overflow: "hidden" }
   }, /*#__PURE__*/React.createElement("div", {
-    style: {
-      width: 21,
-      height: 21,
-      borderRadius: 6,
-      border: `2px solid ${checks[i] ? C.success : C.border}`,
-      background: checks[i] ? C.success : "transparent",
-      display: "flex",
-      alignItems: "center",
-      justifyContent: "center",
-      flexShrink: 0
-    }
-  }, checks[i] && /*#__PURE__*/React.createElement("span", {
-    style: {
-      color: "#fff",
-      fontSize: 12,
-      fontWeight: 700
-    }
-  }, "\u2713")), /*#__PURE__*/React.createElement("span", {
-    style: {
-      fontSize: 13,
-      color: checks[i] ? C.success : C.text
-    }
-  }, item))), /*#__PURE__*/React.createElement("div", {
-    style: {
-      display: "flex",
-      gap: 9,
-      marginTop: 14
-    }
+    onClick: () => toggle(i),
+    style: { display: "flex", alignItems: "center", gap: 11, padding: "10px 12px", cursor: "pointer" }
+  }, /*#__PURE__*/React.createElement("div", {
+    style: { width: 21, height: 21, borderRadius: 6, border: `2px solid ${item.ok ? C.success : C.border}`, background: item.ok ? C.success : "transparent", display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }
+  }, item.ok && /*#__PURE__*/React.createElement("span", { style: { color: "#fff", fontSize: 12, fontWeight: 700 } }, "\u2713")),
+  /*#__PURE__*/React.createElement("span", { style: { fontSize: 13, color: item.ok ? C.success : C.text, flex: 1 } }, item.label),
+  item.custom && /*#__PURE__*/React.createElement("button", {
+    onClick: e => { e.stopPropagation(); removeItem(i); },
+    style: { background: "none", border: "none", color: C.error, cursor: "pointer", fontSize: 14, padding: "0 4px" }
+  }, "\u2715")),
+  /*#__PURE__*/React.createElement("div", {
+    style: { padding: "0 12px 10px", borderTop: `1px solid ${C.border}44`, paddingTop: 8, display: "flex", flexDirection: "column", gap: 6 }
+  }, /*#__PURE__*/React.createElement("input", {
+    placeholder: "Descreva o estado / avaria (opcional)...",
+    value: item.obs || "",
+    onChange: e => setObs(i, e.target.value),
+    style: { width: "100%", background: "transparent", border: "none", borderBottom: `1px solid ${C.border}44`, padding: "3px 0 4px", color: C.warning, fontSize: 11, fontFamily: "inherit", outline: "none", boxSizing: "border-box" }
+  }),
+  item.foto ? /*#__PURE__*/React.createElement("div", { style: { display: "flex", alignItems: "center", gap: 7, marginTop: 3 } },
+    /*#__PURE__*/React.createElement("img", { src: item.foto, alt: "", style: { width: 60, height: 45, objectFit: "cover", borderRadius: 5, border: `1px solid ${C.error}55` } }),
+    /*#__PURE__*/React.createElement("button", { onClick: () => setFoto(i, ""), style: { background: "none", border: "none", color: C.error, cursor: "pointer", fontSize: 10, fontFamily: "inherit" } }, "Remover foto")
+  ) : /*#__PURE__*/React.createElement("label", {
+    style: { display: "inline-flex", alignItems: "center", gap: 4, background: C.border + "30", border: `1px dashed ${C.border}`, borderRadius: 5, padding: "2px 9px", cursor: "pointer", fontSize: 10, color: C.textDim }
+  }, uploadingIdx === i ? "Enviando..." : "\uD83D\uDCF7 Foto do estado",
+    /*#__PURE__*/React.createElement("input", { type: "file", accept: "image/*", style: { display: "none" }, onChange: e => e.target.files[0] && uploadFoto(i, e.target.files[0]) })
+  )))),
+  /*#__PURE__*/React.createElement("div", {
+    style: { display: "flex", gap: 8, marginBottom: 14, marginTop: 4 }
+  }, /*#__PURE__*/React.createElement("input", {
+    placeholder: "+ Adicionar novo item de verificação...",
+    value: newLabel,
+    onChange: e => setNewLabel(e.target.value),
+    onKeyDown: e => e.key === "Enter" && addItem(),
+    style: { flex: 1, background: C.bg, border: `1px dashed ${C.border}`, borderRadius: 7, padding: "7px 10px", color: C.text, fontSize: 12, fontFamily: "inherit", outline: "none" }
+  }), /*#__PURE__*/React.createElement(Btn, { onClick: addItem, small: true }, "Adicionar")),
+  /*#__PURE__*/React.createElement("div", {
+    style: { display: "flex", gap: 9, marginTop: 6 }
   }, /*#__PURE__*/React.createElement(Btn, {
-    onClick: onClose,
-    variant: "ghost",
-    style: {
-      flex: 1,
-      justifyContent: "center"
-    }
+    onClick: onClose, variant: "ghost", style: { flex: 1, justifyContent: "center" }
   }, "Cancelar"), /*#__PURE__*/React.createElement(Btn, {
     onClick: () => {
       if (!allOk && !window.confirm("Nem todos os itens foram marcados. Continuar mesmo assim?")) return;
-      onConfirm();
+      onConfirm(items);
     },
-    variant: "success",
-    style: {
-      flex: 2,
-      justifyContent: "center"
-    }
+    variant: "success", style: { flex: 2, justifyContent: "center" }
   }, "\u2705 Confirmar e Liberar"))));
 }
 
@@ -2319,31 +2466,21 @@ function OverviewTab({
     label: "Combust\xEDvel",
     value: car.combustivel || "",
     onChange: v => onUpdate("combustivel", v),
-    options: [{ v: "", l: "Selecione..." }, ...COMBUSTIVEIS.map(c => ({ v: c, l: c }))]
-  })), /*#__PURE__*/React.createElement("div", { style: { marginTop: 12 } },
-    /*#__PURE__*/React.createElement("div", {
-      style: { fontSize: 10, color: C.textMuted, fontWeight: 600, letterSpacing: 0.7, textTransform: "uppercase", marginBottom: 8 }
-    }, "OPCIONAIS"),
-    /*#__PURE__*/React.createElement("div", { style: { display: "flex", flexWrap: "wrap", gap: 6 } },
-      OPCIONAIS_LISTA.map(op => {
-        const sel = (car.opcionais || []).includes(op);
-        return /*#__PURE__*/React.createElement("button", {
-          key: op,
-          onClick: () => {
-            const cur = car.opcionais || [];
-            onUpdate("opcionais", sel ? cur.filter(x => x !== op) : [...cur, op]);
-          },
-          style: {
-            padding: "4px 10px", borderRadius: 14, cursor: "pointer", fontFamily: "inherit",
-            fontSize: 11, fontWeight: sel ? 700 : 400,
-            background: sel ? C.red + "22" : "transparent",
-            border: `1px solid ${sel ? C.red : C.border}`,
-            color: sel ? C.red : C.textMuted, transition: "all .15s"
-          }
-        }, sel ? "\u2713 " : "", op);
-      })
-    )
-  ), car.origem === "Consignado" && /*#__PURE__*/React.createElement("div", {
+    options: ["", ...COMBUSTIVEIS]
+  })), /*#__PURE__*/React.createElement("div", {
+    style: { marginTop: 12 }
+  }, /*#__PURE__*/React.createElement("div", {
+    style: { fontSize: 10, color: C.textMuted, fontWeight: 600, letterSpacing: 0.7, textTransform: "uppercase", marginBottom: 8 }
+  }, "OPCIONAIS"), /*#__PURE__*/React.createElement("div", { style: { display: "flex", flexWrap: "wrap", gap: 6 } },
+    OPCIONAIS_LISTA.map(op => {
+      const sel = (car.opcionais || []).includes(op);
+      return /*#__PURE__*/React.createElement("button", {
+        key: op,
+        onClick: () => { const cur = car.opcionais || []; onUpdate("opcionais", sel ? cur.filter(x => x !== op) : [...cur, op]); },
+        style: { padding: "4px 10px", borderRadius: 14, cursor: "pointer", fontFamily: "inherit", fontSize: 11, fontWeight: sel ? 700 : 400, background: sel ? C.red + "22" : "transparent", border: `1px solid ${sel ? C.red : C.border}`, color: sel ? C.red : C.textMuted }
+      }, sel ? "\u2713 " : "", op);
+    })
+  )), car.origem === "Consignado" && /*#__PURE__*/React.createElement("div", {
     style: {
       marginTop: 12,
       padding: 12,
@@ -2458,7 +2595,9 @@ function OverviewTab({
     },
     variant: "ghost",
     small: true
-  }, "\uD83D\uDCE4 Compartilhar Ficha"))), /*#__PURE__*/React.createElement("div", {
+  }, "\uD83D\uDCE4 Compartilhar Ficha"), /*#__PURE__*/React.createElement(Btn, {
+    onClick: () => setShowPlacaFipe(true), variant: "info", small: true
+  }, "\uD83D\uDD0D Consultar Placa"))), /*#__PURE__*/React.createElement("div", {
     style: {
       background: C.card,
       border: `1px solid ${C.border}`,
@@ -2548,12 +2687,9 @@ function ChecklistTab({
   data,
   suppliers,
   onChange,
-  user,
-  carId,
-  carName
+  user
 }) {
   const [newItem, setNewItem] = useState("");
-  const [uploadingIdx, setUploadingIdx] = useState(null);
   const cat = CATS[catKey];
   if (!cat || !data) return null;
   const done = data.items.filter(i => i.status === "concluído").length;
@@ -2578,7 +2714,6 @@ function ChecklistTab({
       its[idx].changedBy = user.name;
       its[idx].changedAt = nowStr();
       if (v === "concluído") pushNotif(`✅ ${its[idx].name}`, "success");
-      pushLog(`[${carName || "Veículo"}] ${cat.label} — ${its[idx].name}: ${v}`, user.name, v === "concluído" ? "success" : "info", "operacional");
     }
     onChange({
       ...data,
@@ -2593,28 +2728,13 @@ function ChecklistTab({
         name: newItem.trim(),
         status: "pendente",
         obs: "",
-        avDescricao: "",
-        avFoto: "",
         fornecedor: "",
         changedBy: "",
         changedAt: "",
         custom: true
       }]
     });
-    pushLog(`[${carName || "Veículo"}] ${cat.label} — Item adicionado: ${newItem.trim()}`, user.name, "info", "operacional");
     setNewItem("");
-  }
-  async function uploadAvFoto(idx, file) {
-    if (!file || !carId) return;
-    setUploadingIdx(idx);
-    try {
-      const result = await sbUpload(file, carId, `avaria-${catKey}-${idx}`);
-      upItem(idx, "avFoto", result.url);
-      pushNotif("📸 Foto de avaria enviada", "success");
-    } catch(e) {
-      pushNotif("Erro ao enviar foto", "error");
-    }
-    setUploadingIdx(null);
   }
   return /*#__PURE__*/React.createElement("div", {
     style: {
@@ -2755,39 +2875,7 @@ function ChecklistTab({
       outline: "none",
       boxSizing: "border-box"
     }
-  }), /*#__PURE__*/React.createElement("div", {
-    style: { borderTop: `1px solid ${C.border}55`, marginTop: 5, paddingTop: 5 }
-  }, /*#__PURE__*/React.createElement("div", {
-    style: { fontSize: 9, color: C.error, fontWeight: 700, marginBottom: 3, letterSpacing: 0.5 }
-  }, "\u26A0\uFE0F AVARIA"), /*#__PURE__*/React.createElement("input", {
-    placeholder: "Descreva a avaria (opcional)...",
-    value: item.avDescricao || "",
-    onChange: e => upItem(idx, "avDescricao", e.target.value),
-    style: {
-      width: "100%", background: "transparent", border: "none",
-      borderBottom: `1px solid ${C.border}44`, padding: "2px 0 4px",
-      color: C.warning, fontSize: 10, fontFamily: "inherit", outline: "none",
-      marginBottom: 4, boxSizing: "border-box"
-    }
-  }), item.avFoto ? /*#__PURE__*/React.createElement("div", {
-    style: { display: "flex", alignItems: "center", gap: 7, marginTop: 3 }
-  }, /*#__PURE__*/React.createElement("img", {
-    src: item.avFoto, alt: "avaria",
-    style: { width: 56, height: 42, objectFit: "cover", borderRadius: 5, border: `1px solid ${C.error}55` }
-  }), /*#__PURE__*/React.createElement("button", {
-    onClick: () => upItem(idx, "avFoto", ""),
-    style: { background: "none", border: "none", color: C.error, cursor: "pointer", fontSize: 10, fontFamily: "inherit" }
-  }, "Remover foto")) : /*#__PURE__*/React.createElement("label", {
-    style: {
-      display: "inline-flex", alignItems: "center", gap: 4,
-      background: C.border + "30", border: `1px dashed ${C.border}`,
-      borderRadius: 5, padding: "2px 8px", cursor: "pointer", fontSize: 9, color: C.textDim
-    }
-  }, uploadingIdx === idx ? "Enviando..." : "\uD83D\uDCF7 Foto da avaria",
-  /*#__PURE__*/React.createElement("input", {
-    type: "file", accept: "image/*", style: { display: "none" },
-    onChange: e => e.target.files[0] && uploadAvFoto(idx, e.target.files[0])
-  }))), item.changedBy && /*#__PURE__*/React.createElement("div", {
+  }), item.changedBy && /*#__PURE__*/React.createElement("div", {
     style: {
       fontSize: 9,
       color: C.textDim,
@@ -2886,13 +2974,14 @@ function PecasTab({
     recalcDesp(upd);
     setForm(empty);
     pushNotif(`🔩 ${form.nome} adicionada`, "info");
-    pushLog(`Peça adicionada: ${form.nome} (${car.marca || ""} ${car.name})`, user.name, "info", "operacional");
   }
   function upPeca(id, k, v) {
-    const peca = pecas.find(p => p.id === id);
     const upd = pecas.map(p => {
       if (p.id !== id) return p;
-      const np = { ...p, [k]: v };
+      const np = {
+        ...p,
+        [k]: v
+      };
       if (k === "status" && v === "Comprada") {
         np.compradoPor = user.name;
         np.compradoEm = nowStr();
@@ -2901,16 +2990,11 @@ function PecasTab({
     });
     onChange("pecas", upd);
     recalcDesp(upd);
-    if (k === "status" && peca) {
-      pushLog(`Peça "${peca.nome}" → ${v} (${car.marca || ""} ${car.name})`, user.name, v === "Instalada" ? "success" : "info", "operacional");
-    }
   }
   function del(id) {
-    const peca = pecas.find(p => p.id === id);
     const upd = pecas.filter(p => p.id !== id);
     onChange("pecas", upd);
     recalcDesp(upd);
-    if (peca) pushLog(`Peça removida: "${peca.nome}" (${car.marca || ""} ${car.name})`, user.name, "warning", "operacional");
   }
   const totalComprado = pecas.filter(p => p.status === "Comprada" || p.status === "Instalada").reduce((s, p) => s + (Number(p.valorUnit) || 0) * Number(p.qtd || 1), 0);
   const pendentes = pecas.filter(p => p.status === "Necessária" || p.status === "Orçada").length;
@@ -3179,11 +3263,11 @@ function DocumentosTab({
   }));
   function upDoc(idx, k, v) {
     const upd = [...docs];
-    upd[idx] = { ...upd[idx], [k]: v };
-    if (k === "ok" && v) {
-      pushNotif(`📄 ${docs[idx].nome} confirmado por ${user.name}`, "success");
-      pushLog(`Documento confirmado: "${docs[idx].nome}" (${car.marca || ""} ${car.name})`, user.name, "success", "operacional");
-    }
+    upd[idx] = {
+      ...upd[idx],
+      [k]: v
+    };
+    if (k === "ok" && v) pushNotif(`📄 ${docs[idx].nome} confirmado por ${user.name}`, "success");
     onChange("documentos", upd);
   }
   const total = docs.filter(d => d.ok).length;
@@ -3594,19 +3678,20 @@ function MediaTab({
     onClick: () => setLb(null),
     style: {
       position: "absolute",
-      top: 14,
+      top: "calc(env(safe-area-inset-top, 0px) + 14px)",
       right: 14,
       background: "#fff3",
       border: "none",
       color: "#fff",
       cursor: "pointer",
-      fontSize: 20,
+      fontSize: 22,
       borderRadius: "50%",
-      width: 36,
-      height: 36,
+      width: 42,
+      height: 42,
       display: "flex",
       alignItems: "center",
-      justifyContent: "center"
+      justifyContent: "center",
+      zIndex: 10001
     }
   }, "\u2715"), lb.idx > 0 && /*#__PURE__*/React.createElement("button", {
     onClick: e => {
@@ -4428,6 +4513,7 @@ function CarDetail({
   const [showCats, setShowCats] = useState(false);
   const [showPrest, setShowPrest] = useState(false);
   const [showFipe, setShowFipe] = useState(false);
+  const [showPlacaFipe, setShowPlacaFipe] = useState(false);
   const [saved, setSaved] = useState(false);
   const saveTimer = useRef(null);
   function addHist(updated, acao) {
@@ -4451,16 +4537,17 @@ function CarDetail({
   }
   function up(k, v) {
     setCar(p => {
-      let n = { ...p, [k]: v };
+      let n = {
+        ...p,
+        [k]: v
+      };
       if (k === "status") {
         n = addHist(n, `Status: ${v}`);
         pushNotif(`📋 ${v}`);
-        pushLog(`Status: ${p.marca || ""} ${p.name} → ${v}`, user.name, "info", "todos");
       }
       if (k === "prestadorAtual" && v && v !== "Sem prestador") {
         n = addHist(n, `Enviado para: ${v}`);
         pushNotif(`🔧 Enviado para ${v}`, "warning");
-        pushLog(`Prestador: ${p.marca || ""} ${p.name} → ${v}`, user.name, "warning", "operacional");
       }
       autoSave(n);
       return n;
@@ -4509,7 +4596,6 @@ function CarDetail({
       }, "Aprovado por " + user.name);
       onSave(n);
       pushNotif("✅ Aprovado! Pronto para venda", "success");
-      pushLog(`Aprovado: ${p.marca || ""} ${p.name} por ${user.name}`, user.name, "success", "todos");
       return n;
     });
   }
@@ -4524,16 +4610,28 @@ function CarDetail({
       }, "Venda registrada por " + user.name);
       onSave(n);
       pushNotif("🤝 Venda registrada!", "success");
-      pushLog(`Venda registrada: ${p.marca || ""} ${p.name}${p.precoVenda ? " por " + fmt(p.precoVenda) : ""}`, user.name, "success", "todos");
       return n;
     });
   }
   function handleFipeSelect(val) {
     const num = parseFloat(val.replace("R$", "").replace(/\./g, "").replace(",", ".").trim());
-    if (!isNaN(num)) { upField("tabelaFipe", String(num)); }
+    if (!isNaN(num)) {
+      upField("tabelaFipe", String(num));
+    }
     setShowFipe(false);
     pushNotif("📋 Valor FIPE atualizado", "success");
-    pushLog(`FIPE atualizado: ${car.marca || ""} ${car.name} → ${val}`, user.name, "info", "todos");
+  }
+  function handlePlacaFipeSelect(data) {
+    const info = data.info;
+    const fipe = data.fipe;
+    if (info.marca) upField("marca", info.marca.charAt(0) + info.marca.slice(1).toLowerCase());
+    if (info.modelo) upField("name", info.modelo);
+    if (info.ano_modelo || info.ano) upField("year", String(info.ano_modelo || info.ano));
+    if (info.cor) upField("color", info.cor);
+    if (info.combustivel) upField("combustivel", info.combustivel.split("/")[0].trim());
+    if (fipe) upField("tabelaFipe", String(fipe.valor));
+    setShowPlacaFipe(false);
+    pushNotif("✅ Dados preenchidos pela placa!", "success");
   }
   const days = daysSince(car.createdAt);
   const dc = car.status === "Vendido" ? C.textDim : dayColor(days);
@@ -4759,9 +4857,7 @@ function CarDetail({
     data: car[tab],
     suppliers: suppliers || [],
     onChange: d => upCat(tab, d),
-    user: user,
-    carId: car.id,
-    carName: ((car.marca || "") + " " + (car.name || "")).trim()
+    user: user
   }), tab === "pecas" && /*#__PURE__*/React.createElement(PecasTab, {
     car: car,
     suppliers: suppliers || [],
@@ -4880,7 +4976,6 @@ function CarDetail({
           prestadorAtual: ""
         }, "Saída confirmada de " + p.prestadorAtual + " por " + user.name);
         onSave(n);
-        pushLog(`Saída de prestador: ${p.marca || ""} ${p.name} saiu de ${p.prestadorAtual}`, user.name, "info", "operacional");
         return n;
       });
       setShowPrest(false);
@@ -4890,6 +4985,9 @@ function CarDetail({
   }), showFipe && /*#__PURE__*/React.createElement(FipeModal, {
     onSelect: handleFipeSelect,
     onClose: () => setShowFipe(false)
+  }), showPlacaFipe && /*#__PURE__*/React.createElement(PlacaFipeModal, {
+    onSelect: handlePlacaFipeSelect,
+    onClose: () => setShowPlacaFipe(false)
   }), /*#__PURE__*/React.createElement(BottomNav, {
     items: navItems.map(it => ({
       ...it,
@@ -5051,7 +5149,7 @@ function CarCard({
       fontSize: 11,
       color: C.textMuted
     }
-  }, car.plate || "—", car.year ? ` · ${car.year}` : "", car.color ? ` · ${car.color}` : "", car.combustivel ? ` · ${car.combustivel}` : "")), car.precoVenda ? /*#__PURE__*/React.createElement("div", {
+  }, car.plate || "—", car.year ? ` · ${car.year}` : "", car.color ? ` · ${car.color}` : "")), car.precoVenda ? /*#__PURE__*/React.createElement("div", {
     style: {
       fontSize: 16,
       fontWeight: 800,
@@ -5163,14 +5261,28 @@ function AddCarForm({
   onSave
 }) {
   const [car, setCar] = useState(() => createCar(user));
-  const up = (k, v) => setCar(p => ({
-    ...p,
-    [k]: v
-  }));
+  const [showPlacaFipe, setShowPlacaFipe] = useState(false);
+  const up = (k, v) => setCar(p => ({ ...p, [k]: v }));
   function save() {
     if (!car.name.trim()) return alert("Preencha o nome/modelo do veículo.");
     if (!car.plate.trim()) return alert("Preencha a placa do veículo.");
     onSave(car);
+  }
+  function applyPlacaFipe(data) {
+    const info = data.info;
+    const fipe = data.fipe;
+    setCar(p => ({
+      ...p,
+      plate: info.placa || p.plate,
+      marca: info.marca ? info.marca.charAt(0) + info.marca.slice(1).toLowerCase() : p.marca,
+      name: info.modelo || p.name,
+      year: String(info.ano_modelo || info.ano || p.year),
+      color: info.cor || p.color,
+      combustivel: info.combustivel ? info.combustivel.split("/")[0].trim() : p.combustivel,
+      tabelaFipe: fipe ? String(fipe.valor) : p.tabelaFipe
+    }));
+    setShowPlacaFipe(false);
+    pushNotif("✅ Dados preenchidos pela placa!", "success");
   }
   return /*#__PURE__*/React.createElement("div", {
     style: {
@@ -5200,7 +5312,9 @@ function AddCarForm({
       fontWeight: 700,
       color: C.red
     }
-  }, "\uD83D\uDE97 NOVO VE\xCDCULO")), /*#__PURE__*/React.createElement("div", {
+  }, "\uD83D\uDE97 NOVO VE\xCDCULO"), /*#__PURE__*/React.createElement(Btn, {
+    onClick: () => setShowPlacaFipe(true), variant: "info", small: true
+  }, "\uD83D\uDD0D Consultar por Placa")), /*#__PURE__*/React.createElement("div", {
     style: {
       padding: "16px 14px",
       maxWidth: 700,
@@ -5282,30 +5396,20 @@ function AddCarForm({
     label: "Combust\xEDvel",
     value: car.combustivel || "",
     onChange: v => up("combustivel", v),
-    options: [{ v: "", l: "Selecione..." }, ...COMBUSTIVEIS.map(c => ({ v: c, l: c }))]
-  })))),  /*#__PURE__*/React.createElement("div", {
+    options: ["", ...COMBUSTIVEIS]
+  }))), /*#__PURE__*/React.createElement("div", {
     style: { background: C.card, border: `1px solid ${C.border}`, borderRadius: 12, padding: 16 }
-  }, /*#__PURE__*/React.createElement("div", {
-    style: { color: C.red, fontWeight: 700, fontSize: 11, marginBottom: 10 }
-  }, "OPCIONAIS"), /*#__PURE__*/React.createElement("div", {
-    style: { display: "flex", flexWrap: "wrap", gap: 6 }
-  }, OPCIONAIS_LISTA.map(op => {
-    const sel = (car.opcionais || []).includes(op);
-    return /*#__PURE__*/React.createElement("button", {
-      key: op,
-      onClick: () => {
-        const cur = car.opcionais || [];
-        up("opcionais", sel ? cur.filter(x => x !== op) : [...cur, op]);
-      },
-      style: {
-        padding: "5px 12px", borderRadius: 14, cursor: "pointer", fontFamily: "inherit",
-        fontSize: 12, fontWeight: sel ? 700 : 400,
-        background: sel ? C.red + "22" : "transparent",
-        border: `1px solid ${sel ? C.red : C.border}`,
-        color: sel ? C.red : C.textMuted, transition: "all .15s"
-      }
-    }, sel ? "\u2713 " : "", op);
-  }))), car.origem === "Consignado" && /*#__PURE__*/React.createElement("div", {
+  }, /*#__PURE__*/React.createElement("div", { style: { color: C.red, fontWeight: 700, fontSize: 11, marginBottom: 10 } }, "OPCIONAIS"),
+  /*#__PURE__*/React.createElement("div", { style: { display: "flex", flexWrap: "wrap", gap: 6 } },
+    OPCIONAIS_LISTA.map(op => {
+      const sel = (car.opcionais || []).includes(op);
+      return /*#__PURE__*/React.createElement("button", {
+        key: op,
+        onClick: () => { const cur = car.opcionais || []; up("opcionais", sel ? cur.filter(x => x !== op) : [...cur, op]); },
+        style: { padding: "5px 12px", borderRadius: 14, cursor: "pointer", fontFamily: "inherit", fontSize: 12, fontWeight: sel ? 700 : 400, background: sel ? C.red + "22" : "transparent", border: `1px solid ${sel ? C.red : C.border}`, color: sel ? C.red : C.textMuted }
+      }, sel ? "\u2713 " : "", op);
+    })
+  )), car.origem === "Consignado" && /*#__PURE__*/React.createElement("div", {
     style: {
       background: C.card,
       border: `1px solid #7C3AED44`,
@@ -5392,7 +5496,7 @@ function AddCarForm({
     variant: "ghost"
   }, "Cancelar"), /*#__PURE__*/React.createElement(Btn, {
     onClick: save
-  }, "Criar Ficha \u2192"))));
+  }, "Criar Ficha \u2192")))));
 }
 
 // ═══ GARANTIAS SCREEN ════════════════════════════════════════════
@@ -6072,6 +6176,7 @@ function Dashboard({
   onOpenRelatorio,
   onOpenDespesas,
   onOpenNotifs,
+  onOpenPesquisaPlaca,
   onRefresh,
   logCount
 }) {
@@ -6336,10 +6441,14 @@ function Dashboard({
       fontSize: 13,
       fontFamily: "inherit",
       outline: "none",
-      marginBottom: 9,
+      marginBottom: 7,
       boxSizing: "border-box"
     }
-  }), /*#__PURE__*/React.createElement("div", {
+  }), /*#__PURE__*/React.createElement(Btn, {
+    onClick: onOpenPesquisaPlaca,
+    variant: "info",
+    style: { width: "100%", justifyContent: "center", marginBottom: 9, fontSize: 12 }
+  }, "\uD83D\uDD0D Pesquisar Veículo por Placa (API)"), /*#__PURE__*/React.createElement("div", {
     style: {
       display: "flex",
       gap: 6,
@@ -6446,6 +6555,7 @@ function App() {
   const [showRelatorio, setShowRelatorio] = useState(false);
   const [showDespesas, setShowDespesas] = useState(false);
   const [showNotifs, setShowNotifs] = useState(false);
+  const [showPesquisaPlaca, setShowPesquisaPlaca] = useState(false);
   const notifs = useNotifications();
   useEffect(() => {
     _forceUpdate = setRenderKey;
@@ -6484,14 +6594,18 @@ function App() {
   }, []);
   async function loadAll() {
     try {
-      const [dbUsers, dbCars, dbSup, dbDark, dbUser, dbDesp, dbLogs] = await Promise.all([sbGet("users"), sbGet("cars"), sbGet("suppliers"), sbGet("dark_mode"), sbGet("session_user"), sbGet("despesas_fixas"), sbGet("activity_log")]);
+      const [dbUsers, dbCars, dbSup, dbDark, dbDesp, dbLogs] = await Promise.all([sbGet("users"), sbGet("cars"), sbGet("suppliers"), sbGet("dark_mode"), sbGet("despesas_fixas"), sbGet("activity_log")]);
       if (dbUsers && Array.isArray(dbUsers) && dbUsers.length > 0) setUsers(dbUsers);else await sbSet("users", DEFAULT_USERS);
       if (dbCars && Array.isArray(dbCars)) setCars(dbCars);
       if (dbSup && Array.isArray(dbSup)) setSuppliers(dbSup);
       if (dbDesp && Array.isArray(dbDesp)) setDespesasFixas(dbDesp);
       if (dbLogs && Array.isArray(dbLogs)) setLogs(dbLogs);
       if (typeof dbDark === "boolean") setDarkMode(dbDark);
-      if (dbUser && dbUser.id) setUser(dbUser);
+      // Session: localStorage — each device keeps its own session
+      try {
+        const lsUser = localStorage.getItem("premier_session");
+        if (lsUser) { const u = JSON.parse(lsUser); if (u && u.id) setUser(u); }
+      } catch(e) {}
     } catch (e) {
       console.error("Load error:", e);
     }
@@ -6516,19 +6630,13 @@ function App() {
   async function login(u) {
     setUser(u);
     pushLog(`Login: ${u.name} (${ROLE_LABEL[u.role] || u.role})`, u.name, "info", "todos");
-    try {
-      await sbSet("session_user", u);
-    } catch (e) {
-      console.error(e);
-    }
+    try { localStorage.setItem("premier_session", JSON.stringify(u)); } catch(e) {}
   }
   async function logout() {
     setUser(null);
     setView("dashboard");
     setSelectedCar(null);
-    try {
-      await sbSet("session_user", null);
-    } catch (e) {}
+    try { localStorage.removeItem("premier_session"); } catch(e) {}
   }
   async function toggleDark() {
     const nd = !darkMode;
@@ -6560,7 +6668,7 @@ function App() {
       setSelectedCar(car);
       setView("carDetail");
       pushNotif(`🚗 ${car.marca || ""} ${car.name} cadastrado!`, "success");
-      pushLog(`Veículo cadastrado: ${car.marca || ""} ${car.name} (${car.plate})`, user.name, "success", "todos");
+      pushLog(`Veículo cadastrado: ${car.marca || ""} ${car.name} (${car.plate})`, user.name, "success");
     }
   }), /*#__PURE__*/React.createElement(NotifToasts, {
     notifs: notifs
@@ -6577,6 +6685,12 @@ function App() {
       const upd = cars.map(c => c.id === updated.id ? updated : c);
       saveCars(upd);
       setSelectedCar(updated);
+      if (updated.status !== selectedCar.status) {
+        pushLog(`Status alterado: ${selectedCar.name} → ${updated.status}`, user.name, "info");
+      }
+      if (updated.status === "Vendido" && selectedCar.status !== "Vendido") {
+        pushLog(`Venda registrada: ${updated.marca || ""} ${updated.name} por ${updated.precoVenda ? fmt(updated.precoVenda) : "—"}`, user.name, "success");
+      }
     },
     onDelete: id => {
       const car = cars.find(c => c.id === id);
@@ -6584,7 +6698,7 @@ function App() {
       setView("dashboard");
       setSelectedCar(null);
       pushNotif("🗑 Veículo removido", "warning");
-      if (car) pushLog(`Veículo removido: ${car.marca || ""} ${car.name}`, user.name, "warning", "todos");
+      if (car) pushLog(`Veículo removido: ${car.marca || ""} ${car.name}`, user.name, "warning");
     }
   }), showSuppliers && CAN.suppliers(user.role) && /*#__PURE__*/React.createElement(SuppliersModal, {
     suppliers: suppliers,
@@ -6620,7 +6734,8 @@ function App() {
     onOpenGarantias: () => setView("garantias"),
     onOpenRelatorio: () => setShowRelatorio(true),
     onOpenDespesas: () => setShowDespesas(true),
-    onOpenNotifs: () => setShowNotifs(true)
+    onOpenNotifs: () => setShowNotifs(true),
+    onOpenPesquisaPlaca: () => setShowPesquisaPlaca(true)
   }), showSuppliers && CAN.suppliers(user.role) && /*#__PURE__*/React.createElement(SuppliersModal, {
     suppliers: suppliers,
     onChange: saveSuppliers,
@@ -6646,6 +6761,10 @@ function App() {
     user: user,
     onChange: saveDespesas,
     onClose: () => setShowDespesas(false)
+  }), showPesquisaPlaca && /*#__PURE__*/React.createElement(PesquisaPlacaModal, {
+    cars: cars,
+    onSelectCar: car => { setSelectedCar(car); setView("carDetail"); setShowPesquisaPlaca(false); },
+    onClose: () => setShowPesquisaPlaca(false)
   }), showNotifs && /*#__PURE__*/React.createElement(NotificacoesModal, {
     logs: logs,
     user: user,
