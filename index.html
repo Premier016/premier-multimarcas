@@ -16,6 +16,7 @@
     ::-webkit-scrollbar-thumb{background:#333;border-radius:2px}
     select option{background:#0F0F0F;color:#F0F0F0;}
     @keyframes slideIn{from{opacity:0;transform:translateX(20px)}to{opacity:1;transform:translateX(0)}}
+    @keyframes spin{to{transform:rotate(360deg)}}
   </style>
 </head>
 <body>
@@ -447,6 +448,533 @@ function NotifToasts({
       animation: "slideIn .25s ease"
     }
   }, n.msg)));
+}
+
+// ═══ ACTIVITY LOG ═══════════════════════════════════════════════
+let _addLog = null;
+function pushLog(acao, por, tipo = "info") {
+  if (_addLog) _addLog({
+    id: uid(),
+    acao,
+    por,
+    em: nowStr(),
+    tipo
+  });
+}
+
+// ═══ PULL TO REFRESH ════════════════════════════════════════════
+function PullToRefresh({
+  onRefresh,
+  children
+}) {
+  const ref = useRef(null);
+  const [pulling, setPulling] = useState(false);
+  const [pct, setPct] = useState(0);
+  const startY = useRef(0);
+  const threshold = 65;
+  useEffect(() => {
+    const el = ref.current;
+    if (!el) return;
+    function onTouchStart(e) {
+      startY.current = e.touches[0].clientY;
+    }
+    function onTouchMove(e) {
+      if (window.scrollY > 5) return;
+      const dy = e.touches[0].clientY - startY.current;
+      if (dy > 0) {
+        setPulling(true);
+        setPct(Math.min(dy / threshold, 1));
+      }
+    }
+    function onTouchEnd() {
+      if (pct >= 1) {
+        onRefresh();
+      }
+      setPulling(false);
+      setPct(0);
+    }
+    el.addEventListener("touchstart", onTouchStart, {
+      passive: true
+    });
+    el.addEventListener("touchmove", onTouchMove, {
+      passive: true
+    });
+    el.addEventListener("touchend", onTouchEnd, {
+      passive: true
+    });
+    return () => {
+      el.removeEventListener("touchstart", onTouchStart);
+      el.removeEventListener("touchmove", onTouchMove);
+      el.removeEventListener("touchend", onTouchEnd);
+    };
+  }, [onRefresh, pct]);
+  return /*#__PURE__*/React.createElement("div", {
+    ref: ref,
+    style: {
+      position: "relative"
+    }
+  }, pulling && /*#__PURE__*/React.createElement("div", {
+    style: {
+      position: "absolute",
+      top: 0,
+      left: 0,
+      right: 0,
+      display: "flex",
+      justifyContent: "center",
+      alignItems: "center",
+      height: 48,
+      zIndex: 50,
+      pointerEvents: "none"
+    }
+  }, /*#__PURE__*/React.createElement("div", {
+    style: {
+      width: 28,
+      height: 28,
+      borderRadius: "50%",
+      border: `3px solid ${C.border}`,
+      borderTop: `3px solid ${C.red}`,
+      animation: pct >= 1 ? "spin .6s linear infinite" : "none",
+      transform: `rotate(${pct * 270}deg)`,
+      transition: "transform .1s"
+    }
+  })), children);
+}
+
+// ═══ MINI BAR CHART ═════════════════════════════════════════════
+function MiniBarChart({
+  dados,
+  altura = 100
+}) {
+  if (!dados || dados.length === 0) return null;
+  const max = Math.max(...dados.map(d => Math.max(d.receita || 0, d.lucro || 0)), 1);
+  const W = 100 / dados.length;
+  return /*#__PURE__*/React.createElement("svg", {
+    width: "100%",
+    height: altura + 24,
+    style: {
+      overflow: "visible",
+      display: "block"
+    }
+  }, dados.map((d, i) => {
+    const bW = W * 0.35;
+    const gap = W * 0.08;
+    const x1 = i * W + W * 0.05;
+    const x2 = x1 + bW + gap;
+    const h1 = Math.max((d.receita || 0) / max * (altura - 4), 0);
+    const h2 = Math.max((d.lucro || 0) / max * (altura - 4), 0);
+    const y1 = altura - h1;
+    const y2 = altura - h2;
+    return /*#__PURE__*/React.createElement("g", {
+      key: i
+    }, /*#__PURE__*/React.createElement("rect", {
+      x: `${x1}%`,
+      y: y1,
+      width: `${bW}%`,
+      height: h1,
+      fill: C.info + "bb",
+      rx: 2
+    }), /*#__PURE__*/React.createElement("rect", {
+      x: `${x2}%`,
+      y: y2,
+      width: `${bW}%`,
+      height: h2,
+      fill: d.lucro >= 0 ? C.success + "bb" : C.error + "bb",
+      rx: 2
+    }), /*#__PURE__*/React.createElement("text", {
+      x: `${i * W + W / 2}%`,
+      y: altura + 14,
+      textAnchor: "middle",
+      fontSize: 8,
+      fill: C.textMuted
+    }, d.label));
+  }), /*#__PURE__*/React.createElement("line", {
+    x1: "0",
+    y1: altura,
+    x2: "100%",
+    y2: altura,
+    stroke: C.border,
+    strokeWidth: 1
+  }));
+}
+
+// ═══ NOTIFICAÇÕES MODAL ═════════════════════════════════════════
+function NotificacoesModal({
+  logs,
+  onClear,
+  onClose
+}) {
+  const TIPO_COL = {
+    info: C.info,
+    success: C.success,
+    warning: C.warning,
+    error: C.error
+  };
+  const TIPO_ICO = {
+    info: "ℹ️",
+    success: "✅",
+    warning: "⚠️",
+    error: "❌"
+  };
+  return /*#__PURE__*/React.createElement(Modal, {
+    title: "\uD83D\uDD14 Atividades do Sistema",
+    onClose: onClose,
+    width: 560
+  }, /*#__PURE__*/React.createElement("div", {
+    style: {
+      display: "flex",
+      flexDirection: "column",
+      gap: 10
+    }
+  }, /*#__PURE__*/React.createElement("div", {
+    style: {
+      display: "flex",
+      justifyContent: "space-between",
+      alignItems: "center"
+    }
+  }, /*#__PURE__*/React.createElement("span", {
+    style: {
+      fontSize: 12,
+      color: C.textMuted
+    }
+  }, logs.length, " registro(s)"), logs.length > 0 && /*#__PURE__*/React.createElement(Btn, {
+    onClick: onClear,
+    variant: "ghost",
+    small: true
+  }, "Limpar tudo")), logs.length === 0 ? /*#__PURE__*/React.createElement("div", {
+    style: {
+      textAlign: "center",
+      padding: "30px 0",
+      color: C.textDim,
+      fontSize: 13
+    }
+  }, "Nenhuma atividade registrada") : /*#__PURE__*/React.createElement("div", {
+    style: {
+      display: "flex",
+      flexDirection: "column",
+      gap: 6,
+      maxHeight: 420,
+      overflowY: "auto"
+    }
+  }, logs.map(l => /*#__PURE__*/React.createElement("div", {
+    key: l.id,
+    style: {
+      background: C.bg,
+      border: `1px solid ${TIPO_COL[l.tipo] || C.border}22`,
+      borderLeft: `3px solid ${TIPO_COL[l.tipo] || C.border}`,
+      borderRadius: 8,
+      padding: "9px 12px"
+    }
+  }, /*#__PURE__*/React.createElement("div", {
+    style: {
+      display: "flex",
+      gap: 7,
+      alignItems: "flex-start"
+    }
+  }, /*#__PURE__*/React.createElement("span", {
+    style: {
+      fontSize: 13,
+      flexShrink: 0
+    }
+  }, TIPO_ICO[l.tipo] || "ℹ️"), /*#__PURE__*/React.createElement("div", {
+    style: {
+      flex: 1,
+      minWidth: 0
+    }
+  }, /*#__PURE__*/React.createElement("div", {
+    style: {
+      fontSize: 12,
+      color: C.text
+    }
+  }, l.acao), /*#__PURE__*/React.createElement("div", {
+    style: {
+      fontSize: 10,
+      color: C.textMuted,
+      marginTop: 2
+    }
+  }, l.por, " \xB7 ", l.em))))))));
+}
+
+// ═══ DESPESAS FIXAS MODAL ════════════════════════════════════════
+const DESP_CATS = ["Aluguel", "Pessoal", "Marketing", "Impostos", "Manutenção", "Serviços", "Outros"];
+const DESP_RECORR = ["Mensal", "Semanal", "Anual", "Única"];
+function DespesasFixasModal({
+  despesas,
+  user,
+  onChange,
+  onClose
+}) {
+  const empty = {
+    nome: "",
+    tipo: "Fixa",
+    categoria: "Outros",
+    valor: "",
+    recorrencia: "Mensal",
+    ativa: true
+  };
+  const [form, setForm] = useState(empty);
+  const [editing, setEditing] = useState(null);
+  const list = despesas || [];
+  const totalFix = list.filter(d => d.tipo === "Fixa" && d.ativa).reduce((s, d) => {
+    const v = Number(d.valor) || 0;
+    if (d.recorrencia === "Mensal") return s + v;
+    if (d.recorrencia === "Semanal") return s + v * 4.33;
+    if (d.recorrencia === "Anual") return s + v / 12;
+    return s + v;
+  }, 0);
+  const totalVar = list.filter(d => d.tipo === "Variável" && d.ativa).reduce((s, d) => s + (Number(d.valor) || 0), 0);
+  function save() {
+    if (!form.nome.trim() || !form.valor) return;
+    let upd;
+    if (editing) {
+      upd = list.map(d => d.id === editing ? {
+        ...d,
+        ...form
+      } : d);
+    } else {
+      upd = [...list, {
+        ...form,
+        id: uid(),
+        criadoEm: new Date().toISOString(),
+        criadoPor: user.name
+      }];
+    }
+    onChange(upd);
+    setEditing(null);
+    setForm(empty);
+    pushLog(editing ? "Despesa editada: " + form.nome : "Despesa cadastrada: " + form.nome, user.name, "info");
+  }
+  function toggleAtiva(id) {
+    onChange(list.map(d => d.id === id ? {
+      ...d,
+      ativa: !d.ativa
+    } : d));
+  }
+  function del(id) {
+    if (!window.confirm("Remover esta despesa?")) return;
+    onChange(list.filter(d => d.id !== id));
+  }
+  function edit(d) {
+    setEditing(d.id);
+    setForm({
+      nome: d.nome,
+      tipo: d.tipo,
+      categoria: d.categoria,
+      valor: d.valor,
+      recorrencia: d.recorrencia,
+      ativa: d.ativa
+    });
+  }
+  const TIP_COL = {
+    Fixa: C.error,
+    Variável: C.warning
+  };
+  return /*#__PURE__*/React.createElement(Modal, {
+    title: "\uD83D\uDCB3 Despesas Fixas e Vari\xE1veis",
+    onClose: onClose,
+    width: 680
+  }, /*#__PURE__*/React.createElement("div", {
+    style: {
+      display: "flex",
+      flexDirection: "column",
+      gap: 14
+    }
+  }, /*#__PURE__*/React.createElement("div", {
+    style: {
+      display: "grid",
+      gridTemplateColumns: "1fr 1fr",
+      gap: 9
+    }
+  }, /*#__PURE__*/React.createElement("div", {
+    style: {
+      background: C.error + "18",
+      border: `1px solid ${C.error}33`,
+      borderRadius: 10,
+      padding: 12,
+      textAlign: "center"
+    }
+  }, /*#__PURE__*/React.createElement("div", {
+    style: {
+      fontSize: 9,
+      color: C.textMuted,
+      marginBottom: 4,
+      letterSpacing: 1
+    }
+  }, "TOTAL FIXAS/M\xCAS"), /*#__PURE__*/React.createElement("div", {
+    style: {
+      fontSize: 16,
+      fontWeight: 800,
+      color: C.error
+    }
+  }, fmt(totalFix))), /*#__PURE__*/React.createElement("div", {
+    style: {
+      background: C.warning + "18",
+      border: `1px solid ${C.warning}33`,
+      borderRadius: 10,
+      padding: 12,
+      textAlign: "center"
+    }
+  }, /*#__PURE__*/React.createElement("div", {
+    style: {
+      fontSize: 9,
+      color: C.textMuted,
+      marginBottom: 4,
+      letterSpacing: 1
+    }
+  }, "TOTAL VARI\xC1VEIS"), /*#__PURE__*/React.createElement("div", {
+    style: {
+      fontSize: 16,
+      fontWeight: 800,
+      color: C.warning
+    }
+  }, fmt(totalVar)))), /*#__PURE__*/React.createElement("div", {
+    style: {
+      background: C.bg,
+      border: `1px solid ${C.border}`,
+      borderRadius: 11,
+      padding: 14
+    }
+  }, /*#__PURE__*/React.createElement("div", {
+    style: {
+      color: C.red,
+      fontWeight: 700,
+      fontSize: 11,
+      marginBottom: 11
+    }
+  }, editing ? "✏️ EDITANDO" : "➕ NOVA DESPESA"), /*#__PURE__*/React.createElement("div", {
+    style: {
+      display: "grid",
+      gridTemplateColumns: "2fr 1fr 1fr",
+      gap: 9,
+      marginBottom: 9
+    }
+  }, /*#__PURE__*/React.createElement(Inp, {
+    label: "Nome/Descri\xE7\xE3o",
+    value: form.nome,
+    onChange: v => setForm(p => ({
+      ...p,
+      nome: v
+    })),
+    small: true
+  }), /*#__PURE__*/React.createElement(Sel, {
+    label: "Tipo",
+    value: form.tipo,
+    onChange: v => setForm(p => ({
+      ...p,
+      tipo: v
+    })),
+    options: ["Fixa", "Variável"],
+    small: true
+  }), /*#__PURE__*/React.createElement(Inp, {
+    label: "Valor (R$)",
+    value: form.valor,
+    onChange: v => setForm(p => ({
+      ...p,
+      valor: v
+    })),
+    type: "number",
+    small: true
+  })), /*#__PURE__*/React.createElement("div", {
+    style: {
+      display: "grid",
+      gridTemplateColumns: "1fr 1fr",
+      gap: 9,
+      marginBottom: 9
+    }
+  }, /*#__PURE__*/React.createElement(Sel, {
+    label: "Categoria",
+    value: form.categoria,
+    onChange: v => setForm(p => ({
+      ...p,
+      categoria: v
+    })),
+    options: DESP_CATS,
+    small: true
+  }), /*#__PURE__*/React.createElement(Sel, {
+    label: "Recorr\xEAncia",
+    value: form.recorrencia,
+    onChange: v => setForm(p => ({
+      ...p,
+      recorrencia: v
+    })),
+    options: DESP_RECORR,
+    small: true
+  })), /*#__PURE__*/React.createElement("div", {
+    style: {
+      display: "flex",
+      gap: 8
+    }
+  }, editing && /*#__PURE__*/React.createElement(Btn, {
+    onClick: () => {
+      setEditing(null);
+      setForm(empty);
+    },
+    variant: "ghost",
+    small: true
+  }, "Cancelar"), /*#__PURE__*/React.createElement(Btn, {
+    onClick: save,
+    small: true
+  }, editing ? "💾 Salvar" : "➕ Adicionar"))), list.length === 0 ? /*#__PURE__*/React.createElement("div", {
+    style: {
+      textAlign: "center",
+      padding: "18px 0",
+      color: C.textDim,
+      fontSize: 12
+    }
+  }, "Nenhuma despesa cadastrada") : /*#__PURE__*/React.createElement("div", {
+    style: {
+      display: "flex",
+      flexDirection: "column",
+      gap: 6
+    }
+  }, list.map(d => /*#__PURE__*/React.createElement("div", {
+    key: d.id,
+    style: {
+      background: C.bg,
+      border: `1px solid ${TIP_COL[d.tipo] || C.border}33`,
+      borderLeft: `3px solid ${TIP_COL[d.tipo] || C.border}`,
+      borderRadius: 9,
+      padding: "10px 12px",
+      display: "flex",
+      alignItems: "center",
+      gap: 9,
+      opacity: d.ativa ? 1 : 0.5
+    }
+  }, /*#__PURE__*/React.createElement("div", {
+    style: {
+      flex: 1,
+      minWidth: 0
+    }
+  }, /*#__PURE__*/React.createElement("div", {
+    style: {
+      fontSize: 13,
+      fontWeight: 600,
+      color: C.text
+    }
+  }, d.nome), /*#__PURE__*/React.createElement("div", {
+    style: {
+      fontSize: 11,
+      color: C.textMuted
+    }
+  }, d.tipo, " \xB7 ", d.categoria, " \xB7 ", d.recorrencia)), /*#__PURE__*/React.createElement("div", {
+    style: {
+      fontWeight: 700,
+      fontSize: 13,
+      color: TIP_COL[d.tipo] || C.text,
+      flexShrink: 0
+    }
+  }, fmt(d.valor)), /*#__PURE__*/React.createElement(Btn, {
+    onClick: () => edit(d),
+    variant: "ghost",
+    small: true
+  }, "\u270F\uFE0F"), /*#__PURE__*/React.createElement(Btn, {
+    onClick: () => toggleAtiva(d.id),
+    variant: d.ativa ? "warning" : "success",
+    small: true
+  }, d.ativa ? "Pausar" : "Ativar"), /*#__PURE__*/React.createElement(Btn, {
+    onClick: () => del(d.id),
+    variant: "danger",
+    small: true
+  }, "\uD83D\uDDD1"))))));
 }
 
 // ═══ UI BASE COMPONENTS ══════════════════════════════════════════
@@ -3959,7 +4487,7 @@ function CarDetail({
       background: C.bg,
       display: "flex",
       flexDirection: "column",
-      paddingBottom: 72
+      paddingBottom: 88
     }
   }, /*#__PURE__*/React.createElement("header", {
     style: {
@@ -4554,7 +5082,7 @@ function AddCarForm({
     style: {
       minHeight: "100vh",
       background: C.bg,
-      paddingBottom: 24
+      paddingBottom: 88
     }
   }, /*#__PURE__*/React.createElement("header", {
     style: {
@@ -4765,7 +5293,7 @@ function GarantiasScreen({
     style: {
       minHeight: "100vh",
       background: C.bg,
-      paddingBottom: 20
+      paddingBottom: 88
     }
   }, /*#__PURE__*/React.createElement("header", {
     style: {
@@ -4924,14 +5452,23 @@ function GarantiasScreen({
 }
 
 // ═══ RELATORIO MODAL ════════════════════════════════════════════
+// ═══ RELATORIO MODAL (ENHANCED) ════════════════════════════════
 function RelatorioModal({
   cars,
+  despesasFixas,
   onClose
 }) {
   const [filtroLoja, setFiltroLoja] = useState("Todas");
-  const [filtroMes, setFiltroMes] = useState("");
+  const [dataInicio, setDataInicio] = useState("");
+  const [dataFim, setDataFim] = useState("");
+  const [aba, setAba] = useState("vendas"); // vendas | despesas | grafico
   const vendidos = cars.filter(c => c.status === "Vendido");
-  const filtered = vendidos.filter(c => (filtroLoja === "Todas" || c.loja === filtroLoja) && (!filtroMes || c.dataVenda?.startsWith(filtroMes)));
+  const filtered = vendidos.filter(c => {
+    if (filtroLoja !== "Todas" && c.loja !== filtroLoja) return false;
+    if (dataInicio && c.dataVenda && c.dataVenda < dataInicio) return false;
+    if (dataFim && c.dataVenda && c.dataVenda > dataFim) return false;
+    return true;
+  });
   const stats = filtered.reduce((acc, c) => {
     const pv = Number(c.precoVenda) || 0;
     const vp = c.origem === "Consignado" ? Number(c.consignadoValor) || 0 : Number(c.valorPago) || 0;
@@ -4939,16 +5476,52 @@ function RelatorioModal({
     const com = Number(c.comissaoValor) || 0;
     return {
       receita: acc.receita + pv,
-      lucro: acc.lucro + (pv - vp - desp - com)
+      lucro: acc.lucro + (pv - vp - desp - com),
+      custo: acc.custo + (vp + desp + com)
     };
   }, {
     receita: 0,
-    lucro: 0
+    lucro: 0,
+    custo: 0
   });
-  const meses = [...new Set(vendidos.map(c => c.dataVenda?.slice(0, 7)).filter(Boolean))].sort().reverse();
+  // Gráfico — últimos 6 meses
+  const hoje = new Date();
+  const dadosGrafico = Array.from({
+    length: 6
+  }, (_, i) => {
+    const d = new Date(hoje.getFullYear(), hoje.getMonth() - 5 + i, 1);
+    const key = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
+    const label = d.toLocaleString("pt-BR", {
+      month: "short"
+    }).replace(".", "");
+    const mes = vendidos.filter(c => c.dataVenda?.startsWith(key));
+    const receita = mes.reduce((s, c) => s + (Number(c.precoVenda) || 0), 0);
+    const lucro = mes.reduce((s, c) => {
+      const pv = Number(c.precoVenda) || 0;
+      const vp = c.origem === "Consignado" ? Number(c.consignadoValor) || 0 : Number(c.valorPago) || 0;
+      const desp = (c.despesas || []).reduce((x, d) => x + (Number(d.valor) || 0), 0);
+      const com = Number(c.comissaoValor) || 0;
+      return s + (pv - vp - desp - com);
+    }, 0);
+    return {
+      label,
+      receita,
+      lucro,
+      key
+    };
+  });
+  const dfixas = despesasFixas || [];
+  const totalFix = dfixas.filter(d => d.tipo === "Fixa" && d.ativa).reduce((s, d) => {
+    const v = Number(d.valor) || 0;
+    if (d.recorrencia === "Mensal") return s + v;
+    if (d.recorrencia === "Semanal") return s + v * 4.33;
+    if (d.recorrencia === "Anual") return s + v / 12;
+    return s + v;
+  }, 0);
+  const totalVar = dfixas.filter(d => d.tipo === "Variável" && d.ativa).reduce((s, d) => s + (Number(d.valor) || 0), 0);
   function exportCSV() {
     const header = "Veículo,Placa,Ano,Loja,Data Venda,Preço Venda,Comprador,Vendedor,Forma Pagamento\n";
-    const rows = filtered.map(c => [`"${(c.marca || "") + " " + (c.name || "")}".trim()`, `"${c.plate || ""}"`, c.year || "", `"${c.loja || ""}"`, c.dataVenda || "", c.precoVenda || "", `"${c.comprador || ""}"`, `"${c.vendedor || ""}"`, `"${c.formaPagamento || ""}"`].join(",")).join("\n");
+    const rows = filtered.map(c => [`"${(c.marca || "") + " " + (c.name || "")}"`, `"${c.plate || ""}"`, c.year || "", `"${c.loja || ""}"`, c.dataVenda || "", c.precoVenda || "", `"${c.comprador || ""}"`, `"${c.vendedor || ""}"`, `"${c.formaPagamento || ""}"`].join(",")).join("\n");
     const blob = new Blob(["\uFEFF" + header + rows], {
       type: "text/csv;charset=utf-8"
     });
@@ -4958,10 +5531,20 @@ function RelatorioModal({
     a.click();
     pushNotif("📥 CSV exportado!", "success");
   }
+  const abas = [{
+    k: "vendas",
+    l: "Vendas"
+  }, {
+    k: "despesas",
+    l: "Despesas"
+  }, {
+    k: "grafico",
+    l: "Gráfico"
+  }];
   return /*#__PURE__*/React.createElement(Modal, {
-    title: "\uD83D\uDCCA Relat\xF3rio de Vendas",
+    title: "\uD83D\uDCCA Relat\xF3rio Financeiro",
     onClose: onClose,
-    width: 720
+    width: 740
   }, /*#__PURE__*/React.createElement("div", {
     style: {
       display: "flex",
@@ -4971,8 +5554,30 @@ function RelatorioModal({
   }, /*#__PURE__*/React.createElement("div", {
     style: {
       display: "flex",
+      gap: 6,
+      borderBottom: `1px solid ${C.border}`,
+      paddingBottom: 8
+    }
+  }, abas.map(a => /*#__PURE__*/React.createElement("button", {
+    key: a.k,
+    onClick: () => setAba(a.k),
+    style: {
+      padding: "5px 14px",
+      borderRadius: 7,
+      border: "none",
+      background: aba === a.k ? C.red : "transparent",
+      color: aba === a.k ? "#fff" : C.textMuted,
+      cursor: "pointer",
+      fontFamily: "inherit",
+      fontSize: 12,
+      fontWeight: aba === a.k ? 700 : 400
+    }
+  }, a.l))), /*#__PURE__*/React.createElement("div", {
+    style: {
+      display: "flex",
       gap: 10,
-      flexWrap: "wrap"
+      flexWrap: "wrap",
+      alignItems: "flex-end"
     }
   }, /*#__PURE__*/React.createElement(Sel, {
     label: "Loja",
@@ -4980,92 +5585,91 @@ function RelatorioModal({
     onChange: setFiltroLoja,
     options: ["Todas", ...LOJAS],
     small: true
-  }), /*#__PURE__*/React.createElement(Sel, {
-    label: "M\xEAs",
-    value: filtroMes,
-    onChange: setFiltroMes,
-    options: [{
-      v: "",
-      l: "Todos os meses"
-    }, ...meses.map(m => ({
-      v: m,
-      l: m
-    }))],
+  }), /*#__PURE__*/React.createElement(Inp, {
+    label: "De",
+    value: dataInicio,
+    onChange: setDataInicio,
+    type: "date",
     small: true
-  })), /*#__PURE__*/React.createElement("div", {
+  }), /*#__PURE__*/React.createElement(Inp, {
+    label: "At\xE9",
+    value: dataFim,
+    onChange: setDataFim,
+    type: "date",
+    small: true
+  }), (dataInicio || dataFim) && /*#__PURE__*/React.createElement(Btn, {
+    onClick: () => {
+      setDataInicio("");
+      setDataFim("");
+    },
+    variant: "ghost",
+    small: true
+  }, "Limpar")), /*#__PURE__*/React.createElement("div", {
     style: {
       display: "grid",
-      gridTemplateColumns: "1fr 1fr 1fr",
-      gap: 10
+      gridTemplateColumns: "repeat(auto-fill,minmax(120px,1fr))",
+      gap: 9
     }
-  }, /*#__PURE__*/React.createElement("div", {
+  }, [{
+    l: "Vendas",
+    v: filtered.length,
+    col: C.success,
+    icon: "🤝"
+  }, {
+    l: "Receita",
+    v: fmt(stats.receita),
+    col: C.info,
+    icon: "💰"
+  }, {
+    l: "Custo Total",
+    v: fmt(stats.custo),
+    col: C.warning,
+    icon: "📉"
+  }, {
+    l: "Lucro Líquido",
+    v: fmt(stats.lucro),
+    col: stats.lucro >= 0 ? C.success : C.error,
+    icon: stats.lucro >= 0 ? "📈" : "📉"
+  }].map(k => /*#__PURE__*/React.createElement("div", {
+    key: k.l,
     style: {
       background: C.bg,
       border: `1px solid ${C.border}`,
-      borderRadius: 11,
-      padding: 14,
+      borderRadius: 10,
+      padding: "11px 12px",
       textAlign: "center"
     }
   }, /*#__PURE__*/React.createElement("div", {
     style: {
-      fontSize: 26,
+      fontSize: 16
+    }
+  }, k.icon), /*#__PURE__*/React.createElement("div", {
+    style: {
+      fontSize: k.l === "Receita" || k.l === "Custo Total" || k.l === "Lucro Líquido" ? 11 : 22,
       fontWeight: 800,
-      color: C.success
+      color: k.col,
+      marginTop: 2,
+      lineHeight: 1.2
     }
-  }, filtered.length), /*#__PURE__*/React.createElement("div", {
+  }, k.v), /*#__PURE__*/React.createElement("div", {
     style: {
-      fontSize: 10,
+      fontSize: 9,
       color: C.textMuted,
-      marginTop: 3
+      marginTop: 2
     }
-  }, "Ve\xEDculos vendidos")), /*#__PURE__*/React.createElement("div", {
+  }, k.l)))), aba === "vendas" && (filtered.length === 0 ? /*#__PURE__*/React.createElement("div", {
     style: {
-      background: C.bg,
-      border: `1px solid ${C.border}`,
-      borderRadius: 11,
-      padding: 14,
-      textAlign: "center"
+      textAlign: "center",
+      padding: "24px 0",
+      color: C.textDim,
+      fontSize: 12
     }
-  }, /*#__PURE__*/React.createElement("div", {
-    style: {
-      fontSize: 15,
-      fontWeight: 800,
-      color: C.info,
-      lineHeight: 1.3
-    }
-  }, fmt(stats.receita)), /*#__PURE__*/React.createElement("div", {
-    style: {
-      fontSize: 10,
-      color: C.textMuted,
-      marginTop: 3
-    }
-  }, "Receita total")), /*#__PURE__*/React.createElement("div", {
-    style: {
-      background: C.bg,
-      border: `1px solid ${C.border}`,
-      borderRadius: 11,
-      padding: 14,
-      textAlign: "center"
-    }
-  }, /*#__PURE__*/React.createElement("div", {
-    style: {
-      fontSize: 15,
-      fontWeight: 800,
-      color: stats.lucro >= 0 ? C.success : C.error,
-      lineHeight: 1.3
-    }
-  }, fmt(stats.lucro)), /*#__PURE__*/React.createElement("div", {
-    style: {
-      fontSize: 10,
-      color: C.textMuted,
-      marginTop: 3
-    }
-  }, "Lucro l\xEDquido"))), filtered.length > 0 && /*#__PURE__*/React.createElement("div", {
+  }, "Nenhuma venda no per\xEDodo") : /*#__PURE__*/React.createElement(React.Fragment, null, /*#__PURE__*/React.createElement("div", {
     style: {
       display: "flex",
       flexDirection: "column",
       gap: 5,
-      maxHeight: 320,
+      maxHeight: 300,
       overflowY: "auto"
     }
   }, filtered.map(c => {
@@ -5127,7 +5731,206 @@ function RelatorioModal({
     style: {
       alignSelf: "flex-start"
     }
-  }, "\uD83D\uDCE5 Exportar CSV")));
+  }, "\uD83D\uDCE5 Exportar CSV"))), aba === "despesas" && /*#__PURE__*/React.createElement("div", {
+    style: {
+      display: "flex",
+      flexDirection: "column",
+      gap: 10
+    }
+  }, /*#__PURE__*/React.createElement("div", {
+    style: {
+      display: "grid",
+      gridTemplateColumns: "1fr 1fr",
+      gap: 9
+    }
+  }, /*#__PURE__*/React.createElement("div", {
+    style: {
+      background: C.error + "18",
+      border: `1px solid ${C.error}33`,
+      borderRadius: 10,
+      padding: 12,
+      textAlign: "center"
+    }
+  }, /*#__PURE__*/React.createElement("div", {
+    style: {
+      fontSize: 9,
+      color: C.textMuted,
+      marginBottom: 4,
+      letterSpacing: 1
+    }
+  }, "DESPESAS FIXAS/M\xCAS"), /*#__PURE__*/React.createElement("div", {
+    style: {
+      fontSize: 16,
+      fontWeight: 800,
+      color: C.error
+    }
+  }, fmt(totalFix))), /*#__PURE__*/React.createElement("div", {
+    style: {
+      background: C.warning + "18",
+      border: `1px solid ${C.warning}33`,
+      borderRadius: 10,
+      padding: 12,
+      textAlign: "center"
+    }
+  }, /*#__PURE__*/React.createElement("div", {
+    style: {
+      fontSize: 9,
+      color: C.textMuted,
+      marginBottom: 4,
+      letterSpacing: 1
+    }
+  }, "DESPESAS VARI\xC1VEIS"), /*#__PURE__*/React.createElement("div", {
+    style: {
+      fontSize: 16,
+      fontWeight: 800,
+      color: C.warning
+    }
+  }, fmt(totalVar)))), dfixas.length === 0 ? /*#__PURE__*/React.createElement("div", {
+    style: {
+      textAlign: "center",
+      padding: "18px 0",
+      color: C.textDim,
+      fontSize: 12
+    }
+  }, "Sem despesas cadastradas. Use \uD83D\uDCB3 Despesas no menu.") : /*#__PURE__*/React.createElement("div", {
+    style: {
+      display: "flex",
+      flexDirection: "column",
+      gap: 5,
+      maxHeight: 280,
+      overflowY: "auto"
+    }
+  }, dfixas.filter(d => d.ativa).map(d => /*#__PURE__*/React.createElement("div", {
+    key: d.id,
+    style: {
+      background: C.bg,
+      border: `1px solid ${C.border}`,
+      borderRadius: 8,
+      padding: "9px 12px",
+      display: "flex",
+      alignItems: "center",
+      gap: 10
+    }
+  }, /*#__PURE__*/React.createElement("div", {
+    style: {
+      flex: 1,
+      minWidth: 0
+    }
+  }, /*#__PURE__*/React.createElement("div", {
+    style: {
+      fontSize: 13,
+      color: C.text,
+      fontWeight: 500
+    }
+  }, d.nome), /*#__PURE__*/React.createElement("div", {
+    style: {
+      fontSize: 10,
+      color: C.textMuted
+    }
+  }, d.tipo, " \xB7 ", d.categoria, " \xB7 ", d.recorrencia)), /*#__PURE__*/React.createElement("div", {
+    style: {
+      fontSize: 12,
+      fontWeight: 700,
+      color: d.tipo === "Fixa" ? C.error : C.warning,
+      flexShrink: 0
+    }
+  }, fmt(d.valor)))), /*#__PURE__*/React.createElement("div", {
+    style: {
+      borderTop: `1px solid ${C.border}`,
+      paddingTop: 8,
+      display: "flex",
+      justifyContent: "flex-end"
+    }
+  }, /*#__PURE__*/React.createElement("span", {
+    style: {
+      fontSize: 13,
+      fontWeight: 800,
+      color: C.error
+    }
+  }, "Total: ", fmt(totalFix + totalVar))))), aba === "grafico" && /*#__PURE__*/React.createElement("div", {
+    style: {
+      display: "flex",
+      flexDirection: "column",
+      gap: 12
+    }
+  }, /*#__PURE__*/React.createElement("div", {
+    style: {
+      fontSize: 11,
+      color: C.textMuted,
+      fontWeight: 700
+    }
+  }, "EVOLU\xC7\xC3O \xDALTIMOS 6 MESES"), /*#__PURE__*/React.createElement("div", {
+    style: {
+      display: "flex",
+      gap: 12,
+      fontSize: 10,
+      color: C.textMuted,
+      marginBottom: 4
+    }
+  }, /*#__PURE__*/React.createElement("span", {
+    style: {
+      display: "flex",
+      alignItems: "center",
+      gap: 4
+    }
+  }, /*#__PURE__*/React.createElement("span", {
+    style: {
+      width: 10,
+      height: 10,
+      borderRadius: 2,
+      background: C.info,
+      display: "inline-block"
+    }
+  }), " Receita"), /*#__PURE__*/React.createElement("span", {
+    style: {
+      display: "flex",
+      alignItems: "center",
+      gap: 4
+    }
+  }, /*#__PURE__*/React.createElement("span", {
+    style: {
+      width: 10,
+      height: 10,
+      borderRadius: 2,
+      background: C.success,
+      display: "inline-block"
+    }
+  }), " Lucro")), /*#__PURE__*/React.createElement(MiniBarChart, {
+    dados: dadosGrafico,
+    altura: 120
+  }), /*#__PURE__*/React.createElement("div", {
+    style: {
+      display: "grid",
+      gridTemplateColumns: "repeat(3,1fr)",
+      gap: 6
+    }
+  }, dadosGrafico.slice(-3).map(d => /*#__PURE__*/React.createElement("div", {
+    key: d.key,
+    style: {
+      background: C.bg,
+      border: `1px solid ${C.border}`,
+      borderRadius: 8,
+      padding: "8px 10px"
+    }
+  }, /*#__PURE__*/React.createElement("div", {
+    style: {
+      fontSize: 10,
+      color: C.textMuted,
+      marginBottom: 3,
+      fontWeight: 700
+    }
+  }, d.label.toUpperCase()), /*#__PURE__*/React.createElement("div", {
+    style: {
+      fontSize: 11,
+      color: C.info,
+      fontWeight: 700
+    }
+  }, d.receita > 0 ? fmt(d.receita) : "—"), /*#__PURE__*/React.createElement("div", {
+    style: {
+      fontSize: 10,
+      color: d.lucro >= 0 ? C.success : C.error
+    }
+  }, d.lucro !== 0 ? fmt(d.lucro) : "—")))))));
 }
 
 // ═══ DASHBOARD ══════════════════════════════════════════════════
@@ -5145,7 +5948,11 @@ function Dashboard({
   onOpenUsers,
   onOpenChangePass,
   onOpenGarantias,
-  onOpenRelatorio
+  onOpenRelatorio,
+  onOpenDespesas,
+  onOpenNotifs,
+  onRefresh,
+  logCount
 }) {
   const [search, setSearch] = useState("");
   const [fStatus, setFStatus] = useState("Todos");
@@ -5217,6 +6024,11 @@ function Dashboard({
     icon: "📊",
     label: "Relatório",
     fn: onOpenRelatorio
+  }] : []), ...(CAN.financial(user.role) ? [{
+    k: "desp",
+    icon: "💳",
+    label: "Despesas",
+    fn: onOpenDespesas
   }] : []), {
     k: "gar",
     icon: "🛡️",
@@ -5239,7 +6051,7 @@ function Dashboard({
       background: C.bg,
       display: "flex",
       flexDirection: "column",
-      paddingBottom: 72
+      paddingBottom: 88
     }
   }, /*#__PURE__*/React.createElement("header", {
     style: {
@@ -5289,7 +6101,33 @@ function Dashboard({
       padding: 4,
       color: C.textMuted
     }
-  }, "\uD83D\uDD11"), /*#__PURE__*/React.createElement("div", {
+  }, "\uD83D\uDD11"), /*#__PURE__*/React.createElement("button", {
+    onClick: onOpenNotifs,
+    style: {
+      background: "none",
+      border: "none",
+      cursor: "pointer",
+      fontSize: 18,
+      padding: 4,
+      position: "relative"
+    }
+  }, "\uD83D\uDD14", logCount > 0 && /*#__PURE__*/React.createElement("span", {
+    style: {
+      position: "absolute",
+      top: 0,
+      right: 0,
+      background: C.red,
+      color: "#fff",
+      borderRadius: "50%",
+      width: 14,
+      height: 14,
+      fontSize: 8,
+      display: "flex",
+      alignItems: "center",
+      justifyContent: "center",
+      fontWeight: 700
+    }
+  }, logCount > 9 ? "9+" : logCount)), /*#__PURE__*/React.createElement("div", {
     style: {
       textAlign: "right"
     }
@@ -5308,7 +6146,9 @@ function Dashboard({
       fontSize: 9,
       color: C.red
     }
-  }, ROLE_LABEL[user.role] || user.role)))), /*#__PURE__*/React.createElement("div", {
+  }, ROLE_LABEL[user.role] || user.role)))), /*#__PURE__*/React.createElement(PullToRefresh, {
+    onRefresh: onRefresh
+  }, /*#__PURE__*/React.createElement("div", {
     style: {
       padding: "12px 14px 0",
       maxWidth: 1400,
@@ -5458,7 +6298,7 @@ function Dashboard({
     car: car,
     user: user,
     onClick: () => onSelectCar(car)
-  })))), /*#__PURE__*/React.createElement(BottomNav, {
+  }))))), /*#__PURE__*/React.createElement(BottomNav, {
     items: navItems.map(it => ({
       ...it,
       active: it.k === "home"
@@ -5474,6 +6314,8 @@ function App() {
   const [users, setUsers] = useState(DEFAULT_USERS);
   const [cars, setCars] = useState([]);
   const [suppliers, setSuppliers] = useState([]);
+  const [despesasFixas, setDespesasFixas] = useState([]);
+  const [logs, setLogs] = useState([]);
   const [view, setView] = useState("dashboard");
   const [selectedCar, setSelectedCar] = useState(null);
   const [darkMode, setDarkMode] = useState(true);
@@ -5481,6 +6323,8 @@ function App() {
   const [showUsers, setShowUsers] = useState(false);
   const [showChangePass, setShowChangePass] = useState(false);
   const [showRelatorio, setShowRelatorio] = useState(false);
+  const [showDespesas, setShowDespesas] = useState(false);
+  const [showNotifs, setShowNotifs] = useState(false);
   const notifs = useNotifications();
   useEffect(() => {
     _forceUpdate = setRenderKey;
@@ -5491,33 +6335,47 @@ function App() {
   useEffect(() => {
     applyTheme(darkMode);
   }, [darkMode]);
+
+  // Wire up the activity log
   useEffect(() => {
-    // Load DM Sans font
+    _addLog = entry => {
+      setLogs(p => {
+        const upd = [entry, ...p].slice(0, 100);
+        sbSet("activity_log", upd).catch(() => {});
+        return upd;
+      });
+    };
+    return () => {
+      _addLog = null;
+    };
+  }, []);
+  useEffect(() => {
     const link = document.createElement("link");
     link.href = "https://fonts.googleapis.com/css2?family=DM+Sans:wght@300;400;500;600;700;800&display=swap";
     link.rel = "stylesheet";
     document.head.appendChild(link);
     document.body.style.fontFamily = "'DM Sans',system-ui,sans-serif";
     document.body.style.margin = "0";
-    // Inject slide-in animation
     const style = document.createElement("style");
-    style.textContent = "@keyframes slideIn{from{opacity:0;transform:translateX(20px)}to{opacity:1;transform:translateX(0)}}*{box-sizing:border-box}input,select,textarea,button{font-family:'DM Sans',system-ui,sans-serif;}";
+    style.textContent = "@keyframes slideIn{from{opacity:0;transform:translateX(20px)}to{opacity:1;transform:translateX(0)}}@keyframes spin{to{transform:rotate(360deg)}}*{box-sizing:border-box}input,select,textarea,button{font-family:'DM Sans',system-ui,sans-serif;}";
     document.head.appendChild(style);
-    async function load() {
-      try {
-        const [dbUsers, dbCars, dbSup, dbDark, dbUser] = await Promise.all([sbGet("users"), sbGet("cars"), sbGet("suppliers"), sbGet("dark_mode"), sbGet("session_user")]);
-        if (dbUsers && Array.isArray(dbUsers) && dbUsers.length > 0) setUsers(dbUsers);else await sbSet("users", DEFAULT_USERS);
-        if (dbCars && Array.isArray(dbCars)) setCars(dbCars);
-        if (dbSup && Array.isArray(dbSup)) setSuppliers(dbSup);
-        if (typeof dbDark === "boolean") setDarkMode(dbDark);
-        if (dbUser && dbUser.id) setUser(dbUser);
-      } catch (e) {
-        console.error("Load error:", e);
-      }
-      setReady(true);
-    }
-    load();
+    loadAll();
   }, []);
+  async function loadAll() {
+    try {
+      const [dbUsers, dbCars, dbSup, dbDark, dbUser, dbDesp, dbLogs] = await Promise.all([sbGet("users"), sbGet("cars"), sbGet("suppliers"), sbGet("dark_mode"), sbGet("session_user"), sbGet("despesas_fixas"), sbGet("activity_log")]);
+      if (dbUsers && Array.isArray(dbUsers) && dbUsers.length > 0) setUsers(dbUsers);else await sbSet("users", DEFAULT_USERS);
+      if (dbCars && Array.isArray(dbCars)) setCars(dbCars);
+      if (dbSup && Array.isArray(dbSup)) setSuppliers(dbSup);
+      if (dbDesp && Array.isArray(dbDesp)) setDespesasFixas(dbDesp);
+      if (dbLogs && Array.isArray(dbLogs)) setLogs(dbLogs);
+      if (typeof dbDark === "boolean") setDarkMode(dbDark);
+      if (dbUser && dbUser.id) setUser(dbUser);
+    } catch (e) {
+      console.error("Load error:", e);
+    }
+    setReady(true);
+  }
   async function saveUsers(u) {
     setUsers(u);
     await sbSet("users", u);
@@ -5530,8 +6388,13 @@ function App() {
     setSuppliers(s);
     await sbSet("suppliers", s);
   }
+  async function saveDespesas(d) {
+    setDespesasFixas(d);
+    await sbSet("despesas_fixas", d);
+  }
   async function login(u) {
     setUser(u);
+    pushLog(`Login: ${u.name}`, u.name, "info");
     try {
       await sbSet("session_user", u);
     } catch (e) {
@@ -5551,14 +6414,23 @@ function App() {
     setDarkMode(nd);
     await sbSet("dark_mode", nd);
   }
+  function handleRefresh() {
+    loadAll();
+    pushNotif("🔄 Dados atualizados", "success");
+  }
+  function clearLogs() {
+    setLogs([]);
+    sbSet("activity_log", []).catch(() => {});
+  }
   if (!ready) return /*#__PURE__*/React.createElement(LoadingScreen, null);
   if (!user) return /*#__PURE__*/React.createElement(LoginScreen, {
     onLogin: login,
     users: users
   });
-  if (view === "addCar") return /*#__PURE__*/React.createElement("div", {
+  const commonProps = {
     key: renderKey
-  }, /*#__PURE__*/React.createElement(AddCarForm, {
+  };
+  if (view === "addCar") return /*#__PURE__*/React.createElement("div", commonProps, /*#__PURE__*/React.createElement(AddCarForm, {
     user: user,
     onBack: () => setView("dashboard"),
     onSave: car => {
@@ -5567,13 +6439,12 @@ function App() {
       setSelectedCar(car);
       setView("carDetail");
       pushNotif(`🚗 ${car.marca || ""} ${car.name} cadastrado!`, "success");
+      pushLog(`Veículo cadastrado: ${car.marca || ""} ${car.name} (${car.plate})`, user.name, "success");
     }
   }), /*#__PURE__*/React.createElement(NotifToasts, {
     notifs: notifs
   }));
-  if (view === "carDetail" && selectedCar) return /*#__PURE__*/React.createElement("div", {
-    key: renderKey
-  }, /*#__PURE__*/React.createElement(CarDetail, {
+  if (view === "carDetail" && selectedCar) return /*#__PURE__*/React.createElement("div", commonProps, /*#__PURE__*/React.createElement(CarDetail, {
     car: selectedCar,
     user: user,
     suppliers: suppliers,
@@ -5585,12 +6456,20 @@ function App() {
       const upd = cars.map(c => c.id === updated.id ? updated : c);
       saveCars(upd);
       setSelectedCar(updated);
+      if (updated.status !== selectedCar.status) {
+        pushLog(`Status alterado: ${selectedCar.name} → ${updated.status}`, user.name, "info");
+      }
+      if (updated.status === "Vendido" && selectedCar.status !== "Vendido") {
+        pushLog(`Venda registrada: ${updated.marca || ""} ${updated.name} por ${updated.precoVenda ? fmt(updated.precoVenda) : "—"}`, user.name, "success");
+      }
     },
     onDelete: id => {
+      const car = cars.find(c => c.id === id);
       saveCars(cars.filter(c => c.id !== id));
       setView("dashboard");
       setSelectedCar(null);
       pushNotif("🗑 Veículo removido", "warning");
+      if (car) pushLog(`Veículo removido: ${car.marca || ""} ${car.name}`, user.name, "warning");
     }
   }), showSuppliers && CAN.suppliers(user.role) && /*#__PURE__*/React.createElement(SuppliersModal, {
     suppliers: suppliers,
@@ -5599,24 +6478,22 @@ function App() {
   }), /*#__PURE__*/React.createElement(NotifToasts, {
     notifs: notifs
   }));
-  if (view === "garantias") return /*#__PURE__*/React.createElement("div", {
-    key: renderKey
-  }, /*#__PURE__*/React.createElement(GarantiasScreen, {
+  if (view === "garantias") return /*#__PURE__*/React.createElement("div", commonProps, /*#__PURE__*/React.createElement(GarantiasScreen, {
     cars: cars,
     onBack: () => setView("dashboard")
   }), /*#__PURE__*/React.createElement(NotifToasts, {
     notifs: notifs
   }));
-  return /*#__PURE__*/React.createElement("div", {
-    key: renderKey
-  }, /*#__PURE__*/React.createElement(Dashboard, {
+  return /*#__PURE__*/React.createElement("div", commonProps, /*#__PURE__*/React.createElement(Dashboard, {
     cars: cars,
     suppliers: suppliers,
     users: users,
     user: user,
     darkMode: darkMode,
+    logCount: logs.length,
     onToggleDark: toggleDark,
     onLogout: logout,
+    onRefresh: handleRefresh,
     onSelectCar: car => {
       setSelectedCar(car);
       setView("carDetail");
@@ -5626,7 +6503,9 @@ function App() {
     onOpenUsers: () => setShowUsers(true),
     onOpenChangePass: () => setShowChangePass(true),
     onOpenGarantias: () => setView("garantias"),
-    onOpenRelatorio: () => setShowRelatorio(true)
+    onOpenRelatorio: () => setShowRelatorio(true),
+    onOpenDespesas: () => setShowDespesas(true),
+    onOpenNotifs: () => setShowNotifs(true)
   }), showSuppliers && CAN.suppliers(user.role) && /*#__PURE__*/React.createElement(SuppliersModal, {
     suppliers: suppliers,
     onChange: saveSuppliers,
@@ -5645,7 +6524,17 @@ function App() {
     onClose: () => setShowChangePass(false)
   }), showRelatorio && CAN.financial(user.role) && /*#__PURE__*/React.createElement(RelatorioModal, {
     cars: cars,
+    despesasFixas: despesasFixas,
     onClose: () => setShowRelatorio(false)
+  }), showDespesas && CAN.financial(user.role) && /*#__PURE__*/React.createElement(DespesasFixasModal, {
+    despesas: despesasFixas,
+    user: user,
+    onChange: saveDespesas,
+    onClose: () => setShowDespesas(false)
+  }), showNotifs && /*#__PURE__*/React.createElement(NotificacoesModal, {
+    logs: logs,
+    onClear: clearLogs,
+    onClose: () => setShowNotifs(false)
   }), /*#__PURE__*/React.createElement(NotifToasts, {
     notifs: notifs
   }));
