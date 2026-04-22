@@ -94,6 +94,8 @@ const URG_COL = {
   Média: "#F59E0B",
   Baixa: "#10B981"
 };
+const COMBUSTIVEIS = ["Flex", "Gasolina", "Etanol", "Diesel", "GNV", "Elétrico", "Híbrido"];
+const OPCIONAIS_LISTA = ["Ar-condicionado", "Direção hidráulica", "Vidros elétricos", "Travas elétricas", "Teto solar", "Central multimídia", "Câmera de ré", "Sensor de estacionamento", "Rodas de liga leve", "Alarme", "Retrovisores elétricos", "Bancos em couro", "GPS/Navegação", "Bluetooth", "Volante multifuncional", "Piloto automático", "Farol de neblina", "Ar-condicionado digital", "Tração 4x4"];
 const ROLE_LABEL = {
   proprietario: "👑 Proprietário",
   gerente: "⭐ Gerente",
@@ -328,6 +330,8 @@ function createCar(user) {
         name: n,
         status: "pendente",
         obs: "",
+        avDescricao: "",
+        avFoto: "",
         fornecedor: "",
         changedBy: "",
         changedAt: ""
@@ -342,6 +346,8 @@ function createCar(user) {
     plate: "",
     year: "",
     color: "",
+    combustivel: "",
+    opcionais: [],
     km: "",
     origem: "Pessoa Física",
     loja: user.loja || "Premier Multimarcas",
@@ -452,13 +458,15 @@ function NotifToasts({
 
 // ═══ ACTIVITY LOG ═══════════════════════════════════════════════
 let _addLog = null;
-function pushLog(acao, por, tipo = "info") {
+// vis: "todos" = só proprietário/gerente vê | "operacional" = todos veem
+function pushLog(acao, por, tipo = "info", vis = "todos") {
   if (_addLog) _addLog({
     id: uid(),
     acao,
     por,
     em: nowStr(),
-    tipo
+    tipo,
+    vis
   });
 }
 
@@ -600,9 +608,12 @@ function MiniBarChart({
 // ═══ NOTIFICAÇÕES MODAL ═════════════════════════════════════════
 function NotificacoesModal({
   logs,
+  user,
   onClear,
   onClose
 }) {
+  const isAdmin = user && ["proprietario", "gerente"].includes(user.role);
+  const filtered = isAdmin ? logs : logs.filter(l => l.vis === "operacional");
   const TIPO_COL = {
     info: C.info,
     success: C.success,
@@ -636,11 +647,11 @@ function NotificacoesModal({
       fontSize: 12,
       color: C.textMuted
     }
-  }, logs.length, " registro(s)"), logs.length > 0 && /*#__PURE__*/React.createElement(Btn, {
+  }, filtered.length, " registro(s)", !isAdmin ? " (visíveis para seu perfil)" : ""), filtered.length > 0 && isAdmin && /*#__PURE__*/React.createElement(Btn, {
     onClick: onClear,
     variant: "ghost",
     small: true
-  }, "Limpar tudo")), logs.length === 0 ? /*#__PURE__*/React.createElement("div", {
+  }, "Limpar tudo")), filtered.length === 0 ? /*#__PURE__*/React.createElement("div", {
     style: {
       textAlign: "center",
       padding: "30px 0",
@@ -655,7 +666,7 @@ function NotificacoesModal({
       maxHeight: 420,
       overflowY: "auto"
     }
-  }, logs.map(l => /*#__PURE__*/React.createElement("div", {
+  }, filtered.map(l => /*#__PURE__*/React.createElement("div", {
     key: l.id,
     style: {
       background: C.bg,
@@ -741,7 +752,7 @@ function DespesasFixasModal({
     onChange(upd);
     setEditing(null);
     setForm(empty);
-    pushLog(editing ? "Despesa editada: " + form.nome : "Despesa cadastrada: " + form.nome, user.name, "info");
+    pushLog(editing ? "Despesa editada: " + form.nome : "Despesa cadastrada: " + form.nome, user.name, "info", "todos");
   }
   function toggleAtiva(id) {
     onChange(list.map(d => d.id === id ? {
@@ -1510,15 +1521,11 @@ function UserManagementModal({
     }
     let upd;
     if (editing) {
-      upd = list.map(u => u.id === editing ? {
-        ...u,
-        ...form
-      } : u);
+      upd = list.map(u => u.id === editing ? { ...u, ...form } : u);
+      pushLog(`Usuário editado: ${form.name} (${form.role})`, "Sistema", "info", "todos");
     } else {
-      upd = [...list, {
-        ...form,
-        id: uid()
-      }];
+      upd = [...list, { ...form, id: uid() }];
+      pushLog(`Usuário criado: ${form.name} (${form.role})`, "Sistema", "success", "todos");
     }
     setList(upd);
     onSave(upd);
@@ -1537,18 +1544,19 @@ function UserManagementModal({
     });
   }
   function toggleAtivo(id) {
-    const upd = list.map(u => u.id === id ? {
-      ...u,
-      ativo: !u.ativo
-    } : u);
+    const u = list.find(x => x.id === id);
+    const upd = list.map(x => x.id === id ? { ...x, ativo: !x.ativo } : x);
     setList(upd);
     onSave(upd);
+    if (u) pushLog(`Usuário ${u.ativo ? "desativado" : "ativado"}: ${u.name}`, "Sistema", "warning", "todos");
   }
   function del(id) {
     if (!window.confirm("Remover usuário permanentemente?")) return;
-    const upd = list.filter(u => u.id !== id);
+    const u = list.find(x => x.id === id);
+    const upd = list.filter(x => x.id !== id);
     setList(upd);
     onSave(upd);
+    if (u) pushLog(`Usuário removido: ${u.name}`, "Sistema", "warning", "todos");
   }
   return /*#__PURE__*/React.createElement(Modal, {
     title: "\uD83D\uDC64 Gerenciar Usu\xE1rios",
@@ -2307,7 +2315,35 @@ function OverviewTab({
     value: car.prestadorAtual || "",
     onChange: v => onUpdate("prestadorAtual", v),
     options: PRESTADORES
-  })), car.origem === "Consignado" && /*#__PURE__*/React.createElement("div", {
+  }), /*#__PURE__*/React.createElement(Sel, {
+    label: "Combust\xEDvel",
+    value: car.combustivel || "",
+    onChange: v => onUpdate("combustivel", v),
+    options: [{ v: "", l: "Selecione..." }, ...COMBUSTIVEIS.map(c => ({ v: c, l: c }))]
+  })), /*#__PURE__*/React.createElement("div", { style: { marginTop: 12 } },
+    /*#__PURE__*/React.createElement("div", {
+      style: { fontSize: 10, color: C.textMuted, fontWeight: 600, letterSpacing: 0.7, textTransform: "uppercase", marginBottom: 8 }
+    }, "OPCIONAIS"),
+    /*#__PURE__*/React.createElement("div", { style: { display: "flex", flexWrap: "wrap", gap: 6 } },
+      OPCIONAIS_LISTA.map(op => {
+        const sel = (car.opcionais || []).includes(op);
+        return /*#__PURE__*/React.createElement("button", {
+          key: op,
+          onClick: () => {
+            const cur = car.opcionais || [];
+            onUpdate("opcionais", sel ? cur.filter(x => x !== op) : [...cur, op]);
+          },
+          style: {
+            padding: "4px 10px", borderRadius: 14, cursor: "pointer", fontFamily: "inherit",
+            fontSize: 11, fontWeight: sel ? 700 : 400,
+            background: sel ? C.red + "22" : "transparent",
+            border: `1px solid ${sel ? C.red : C.border}`,
+            color: sel ? C.red : C.textMuted, transition: "all .15s"
+          }
+        }, sel ? "\u2713 " : "", op);
+      })
+    )
+  ), car.origem === "Consignado" && /*#__PURE__*/React.createElement("div", {
     style: {
       marginTop: 12,
       padding: 12,
@@ -2512,9 +2548,12 @@ function ChecklistTab({
   data,
   suppliers,
   onChange,
-  user
+  user,
+  carId,
+  carName
 }) {
   const [newItem, setNewItem] = useState("");
+  const [uploadingIdx, setUploadingIdx] = useState(null);
   const cat = CATS[catKey];
   if (!cat || !data) return null;
   const done = data.items.filter(i => i.status === "concluído").length;
@@ -2539,6 +2578,7 @@ function ChecklistTab({
       its[idx].changedBy = user.name;
       its[idx].changedAt = nowStr();
       if (v === "concluído") pushNotif(`✅ ${its[idx].name}`, "success");
+      pushLog(`[${carName || "Veículo"}] ${cat.label} — ${its[idx].name}: ${v}`, user.name, v === "concluído" ? "success" : "info", "operacional");
     }
     onChange({
       ...data,
@@ -2553,13 +2593,28 @@ function ChecklistTab({
         name: newItem.trim(),
         status: "pendente",
         obs: "",
+        avDescricao: "",
+        avFoto: "",
         fornecedor: "",
         changedBy: "",
         changedAt: "",
         custom: true
       }]
     });
+    pushLog(`[${carName || "Veículo"}] ${cat.label} — Item adicionado: ${newItem.trim()}`, user.name, "info", "operacional");
     setNewItem("");
+  }
+  async function uploadAvFoto(idx, file) {
+    if (!file || !carId) return;
+    setUploadingIdx(idx);
+    try {
+      const result = await sbUpload(file, carId, `avaria-${catKey}-${idx}`);
+      upItem(idx, "avFoto", result.url);
+      pushNotif("📸 Foto de avaria enviada", "success");
+    } catch(e) {
+      pushNotif("Erro ao enviar foto", "error");
+    }
+    setUploadingIdx(null);
   }
   return /*#__PURE__*/React.createElement("div", {
     style: {
@@ -2700,7 +2755,39 @@ function ChecklistTab({
       outline: "none",
       boxSizing: "border-box"
     }
-  }), item.changedBy && /*#__PURE__*/React.createElement("div", {
+  }), /*#__PURE__*/React.createElement("div", {
+    style: { borderTop: `1px solid ${C.border}55`, marginTop: 5, paddingTop: 5 }
+  }, /*#__PURE__*/React.createElement("div", {
+    style: { fontSize: 9, color: C.error, fontWeight: 700, marginBottom: 3, letterSpacing: 0.5 }
+  }, "\u26A0\uFE0F AVARIA"), /*#__PURE__*/React.createElement("input", {
+    placeholder: "Descreva a avaria (opcional)...",
+    value: item.avDescricao || "",
+    onChange: e => upItem(idx, "avDescricao", e.target.value),
+    style: {
+      width: "100%", background: "transparent", border: "none",
+      borderBottom: `1px solid ${C.border}44`, padding: "2px 0 4px",
+      color: C.warning, fontSize: 10, fontFamily: "inherit", outline: "none",
+      marginBottom: 4, boxSizing: "border-box"
+    }
+  }), item.avFoto ? /*#__PURE__*/React.createElement("div", {
+    style: { display: "flex", alignItems: "center", gap: 7, marginTop: 3 }
+  }, /*#__PURE__*/React.createElement("img", {
+    src: item.avFoto, alt: "avaria",
+    style: { width: 56, height: 42, objectFit: "cover", borderRadius: 5, border: `1px solid ${C.error}55` }
+  }), /*#__PURE__*/React.createElement("button", {
+    onClick: () => upItem(idx, "avFoto", ""),
+    style: { background: "none", border: "none", color: C.error, cursor: "pointer", fontSize: 10, fontFamily: "inherit" }
+  }, "Remover foto")) : /*#__PURE__*/React.createElement("label", {
+    style: {
+      display: "inline-flex", alignItems: "center", gap: 4,
+      background: C.border + "30", border: `1px dashed ${C.border}`,
+      borderRadius: 5, padding: "2px 8px", cursor: "pointer", fontSize: 9, color: C.textDim
+    }
+  }, uploadingIdx === idx ? "Enviando..." : "\uD83D\uDCF7 Foto da avaria",
+  /*#__PURE__*/React.createElement("input", {
+    type: "file", accept: "image/*", style: { display: "none" },
+    onChange: e => e.target.files[0] && uploadAvFoto(idx, e.target.files[0])
+  }))), item.changedBy && /*#__PURE__*/React.createElement("div", {
     style: {
       fontSize: 9,
       color: C.textDim,
@@ -2799,14 +2886,13 @@ function PecasTab({
     recalcDesp(upd);
     setForm(empty);
     pushNotif(`🔩 ${form.nome} adicionada`, "info");
+    pushLog(`Peça adicionada: ${form.nome} (${car.marca || ""} ${car.name})`, user.name, "info", "operacional");
   }
   function upPeca(id, k, v) {
+    const peca = pecas.find(p => p.id === id);
     const upd = pecas.map(p => {
       if (p.id !== id) return p;
-      const np = {
-        ...p,
-        [k]: v
-      };
+      const np = { ...p, [k]: v };
       if (k === "status" && v === "Comprada") {
         np.compradoPor = user.name;
         np.compradoEm = nowStr();
@@ -2815,11 +2901,16 @@ function PecasTab({
     });
     onChange("pecas", upd);
     recalcDesp(upd);
+    if (k === "status" && peca) {
+      pushLog(`Peça "${peca.nome}" → ${v} (${car.marca || ""} ${car.name})`, user.name, v === "Instalada" ? "success" : "info", "operacional");
+    }
   }
   function del(id) {
+    const peca = pecas.find(p => p.id === id);
     const upd = pecas.filter(p => p.id !== id);
     onChange("pecas", upd);
     recalcDesp(upd);
+    if (peca) pushLog(`Peça removida: "${peca.nome}" (${car.marca || ""} ${car.name})`, user.name, "warning", "operacional");
   }
   const totalComprado = pecas.filter(p => p.status === "Comprada" || p.status === "Instalada").reduce((s, p) => s + (Number(p.valorUnit) || 0) * Number(p.qtd || 1), 0);
   const pendentes = pecas.filter(p => p.status === "Necessária" || p.status === "Orçada").length;
@@ -3088,11 +3179,11 @@ function DocumentosTab({
   }));
   function upDoc(idx, k, v) {
     const upd = [...docs];
-    upd[idx] = {
-      ...upd[idx],
-      [k]: v
-    };
-    if (k === "ok" && v) pushNotif(`📄 ${docs[idx].nome} confirmado por ${user.name}`, "success");
+    upd[idx] = { ...upd[idx], [k]: v };
+    if (k === "ok" && v) {
+      pushNotif(`📄 ${docs[idx].nome} confirmado por ${user.name}`, "success");
+      pushLog(`Documento confirmado: "${docs[idx].nome}" (${car.marca || ""} ${car.name})`, user.name, "success", "operacional");
+    }
     onChange("documentos", upd);
   }
   const total = docs.filter(d => d.ok).length;
@@ -4360,17 +4451,16 @@ function CarDetail({
   }
   function up(k, v) {
     setCar(p => {
-      let n = {
-        ...p,
-        [k]: v
-      };
+      let n = { ...p, [k]: v };
       if (k === "status") {
         n = addHist(n, `Status: ${v}`);
         pushNotif(`📋 ${v}`);
+        pushLog(`Status: ${p.marca || ""} ${p.name} → ${v}`, user.name, "info", "todos");
       }
       if (k === "prestadorAtual" && v && v !== "Sem prestador") {
         n = addHist(n, `Enviado para: ${v}`);
         pushNotif(`🔧 Enviado para ${v}`, "warning");
+        pushLog(`Prestador: ${p.marca || ""} ${p.name} → ${v}`, user.name, "warning", "operacional");
       }
       autoSave(n);
       return n;
@@ -4419,6 +4509,7 @@ function CarDetail({
       }, "Aprovado por " + user.name);
       onSave(n);
       pushNotif("✅ Aprovado! Pronto para venda", "success");
+      pushLog(`Aprovado: ${p.marca || ""} ${p.name} por ${user.name}`, user.name, "success", "todos");
       return n;
     });
   }
@@ -4433,16 +4524,16 @@ function CarDetail({
       }, "Venda registrada por " + user.name);
       onSave(n);
       pushNotif("🤝 Venda registrada!", "success");
+      pushLog(`Venda registrada: ${p.marca || ""} ${p.name}${p.precoVenda ? " por " + fmt(p.precoVenda) : ""}`, user.name, "success", "todos");
       return n;
     });
   }
   function handleFipeSelect(val) {
     const num = parseFloat(val.replace("R$", "").replace(/\./g, "").replace(",", ".").trim());
-    if (!isNaN(num)) {
-      upField("tabelaFipe", String(num));
-    }
+    if (!isNaN(num)) { upField("tabelaFipe", String(num)); }
     setShowFipe(false);
     pushNotif("📋 Valor FIPE atualizado", "success");
+    pushLog(`FIPE atualizado: ${car.marca || ""} ${car.name} → ${val}`, user.name, "info", "todos");
   }
   const days = daysSince(car.createdAt);
   const dc = car.status === "Vendido" ? C.textDim : dayColor(days);
@@ -4668,7 +4759,9 @@ function CarDetail({
     data: car[tab],
     suppliers: suppliers || [],
     onChange: d => upCat(tab, d),
-    user: user
+    user: user,
+    carId: car.id,
+    carName: ((car.marca || "") + " " + (car.name || "")).trim()
   }), tab === "pecas" && /*#__PURE__*/React.createElement(PecasTab, {
     car: car,
     suppliers: suppliers || [],
@@ -4787,6 +4880,7 @@ function CarDetail({
           prestadorAtual: ""
         }, "Saída confirmada de " + p.prestadorAtual + " por " + user.name);
         onSave(n);
+        pushLog(`Saída de prestador: ${p.marca || ""} ${p.name} saiu de ${p.prestadorAtual}`, user.name, "info", "operacional");
         return n;
       });
       setShowPrest(false);
@@ -4957,7 +5051,7 @@ function CarCard({
       fontSize: 11,
       color: C.textMuted
     }
-  }, car.plate || "—", car.year ? ` · ${car.year}` : "", car.color ? ` · ${car.color}` : "")), car.precoVenda ? /*#__PURE__*/React.createElement("div", {
+  }, car.plate || "—", car.year ? ` · ${car.year}` : "", car.color ? ` · ${car.color}` : "", car.combustivel ? ` · ${car.combustivel}` : "")), car.precoVenda ? /*#__PURE__*/React.createElement("div", {
     style: {
       fontSize: 16,
       fontWeight: 800,
@@ -5184,7 +5278,34 @@ function AddCarForm({
     value: car.loja,
     onChange: v => up("loja", v),
     options: LOJAS
-  })))), car.origem === "Consignado" && /*#__PURE__*/React.createElement("div", {
+  }), /*#__PURE__*/React.createElement(Sel, {
+    label: "Combust\xEDvel",
+    value: car.combustivel || "",
+    onChange: v => up("combustivel", v),
+    options: [{ v: "", l: "Selecione..." }, ...COMBUSTIVEIS.map(c => ({ v: c, l: c }))]
+  })))),  /*#__PURE__*/React.createElement("div", {
+    style: { background: C.card, border: `1px solid ${C.border}`, borderRadius: 12, padding: 16 }
+  }, /*#__PURE__*/React.createElement("div", {
+    style: { color: C.red, fontWeight: 700, fontSize: 11, marginBottom: 10 }
+  }, "OPCIONAIS"), /*#__PURE__*/React.createElement("div", {
+    style: { display: "flex", flexWrap: "wrap", gap: 6 }
+  }, OPCIONAIS_LISTA.map(op => {
+    const sel = (car.opcionais || []).includes(op);
+    return /*#__PURE__*/React.createElement("button", {
+      key: op,
+      onClick: () => {
+        const cur = car.opcionais || [];
+        up("opcionais", sel ? cur.filter(x => x !== op) : [...cur, op]);
+      },
+      style: {
+        padding: "5px 12px", borderRadius: 14, cursor: "pointer", fontFamily: "inherit",
+        fontSize: 12, fontWeight: sel ? 700 : 400,
+        background: sel ? C.red + "22" : "transparent",
+        border: `1px solid ${sel ? C.red : C.border}`,
+        color: sel ? C.red : C.textMuted, transition: "all .15s"
+      }
+    }, sel ? "\u2713 " : "", op);
+  }))), car.origem === "Consignado" && /*#__PURE__*/React.createElement("div", {
     style: {
       background: C.card,
       border: `1px solid #7C3AED44`,
@@ -6394,7 +6515,7 @@ function App() {
   }
   async function login(u) {
     setUser(u);
-    pushLog(`Login: ${u.name}`, u.name, "info");
+    pushLog(`Login: ${u.name} (${ROLE_LABEL[u.role] || u.role})`, u.name, "info", "todos");
     try {
       await sbSet("session_user", u);
     } catch (e) {
@@ -6439,7 +6560,7 @@ function App() {
       setSelectedCar(car);
       setView("carDetail");
       pushNotif(`🚗 ${car.marca || ""} ${car.name} cadastrado!`, "success");
-      pushLog(`Veículo cadastrado: ${car.marca || ""} ${car.name} (${car.plate})`, user.name, "success");
+      pushLog(`Veículo cadastrado: ${car.marca || ""} ${car.name} (${car.plate})`, user.name, "success", "todos");
     }
   }), /*#__PURE__*/React.createElement(NotifToasts, {
     notifs: notifs
@@ -6456,12 +6577,6 @@ function App() {
       const upd = cars.map(c => c.id === updated.id ? updated : c);
       saveCars(upd);
       setSelectedCar(updated);
-      if (updated.status !== selectedCar.status) {
-        pushLog(`Status alterado: ${selectedCar.name} → ${updated.status}`, user.name, "info");
-      }
-      if (updated.status === "Vendido" && selectedCar.status !== "Vendido") {
-        pushLog(`Venda registrada: ${updated.marca || ""} ${updated.name} por ${updated.precoVenda ? fmt(updated.precoVenda) : "—"}`, user.name, "success");
-      }
     },
     onDelete: id => {
       const car = cars.find(c => c.id === id);
@@ -6469,7 +6584,7 @@ function App() {
       setView("dashboard");
       setSelectedCar(null);
       pushNotif("🗑 Veículo removido", "warning");
-      if (car) pushLog(`Veículo removido: ${car.marca || ""} ${car.name}`, user.name, "warning");
+      if (car) pushLog(`Veículo removido: ${car.marca || ""} ${car.name}`, user.name, "warning", "todos");
     }
   }), showSuppliers && CAN.suppliers(user.role) && /*#__PURE__*/React.createElement(SuppliersModal, {
     suppliers: suppliers,
@@ -6533,6 +6648,7 @@ function App() {
     onClose: () => setShowDespesas(false)
   }), showNotifs && /*#__PURE__*/React.createElement(NotificacoesModal, {
     logs: logs,
+    user: user,
     onClear: clearLogs,
     onClose: () => setShowNotifs(false)
   }), /*#__PURE__*/React.createElement(NotifToasts, {
