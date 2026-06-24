@@ -238,6 +238,64 @@ async function sbUpload(file, carId, type) {
   };
 }
 
+// ═══ CARS DATA LAYER (Bloco 1: salvamento carro-a-carro) ════════
+// Cada carro vira 1 linha na tabela premier_cars -> saves simultâneos
+// não se sobrescrevem. Se a tabela faltar, cai no blob antigo ("cars").
+let _carsMode = "blob"; // "rows" = tabela premier_cars ok | "blob" = fallback
+async function sbLoadCars() {
+  try {
+    const { data, error } = await getSB().from("premier_cars").select("id,data");
+    if (error) {
+      _carsMode = "blob";
+      const blob = await sbGet("cars");
+      return Array.isArray(blob) ? blob : [];
+    }
+    _carsMode = "rows";
+    if (data && data.length > 0) return data.map(r => r.data);
+    // Tabela vazia: migra do blob antigo (uma vez), se existir
+    const blob = await sbGet("cars");
+    if (Array.isArray(blob) && blob.length > 0) {
+      await sbSaveAllCars(blob);
+      return blob;
+    }
+    return [];
+  } catch (e) {
+    console.error("sbLoadCars", e);
+    _carsMode = "blob";
+    const blob = await sbGet("cars");
+    return Array.isArray(blob) ? blob : [];
+  }
+}
+async function sbSaveCar(car) {
+  if (_carsMode !== "rows") return;
+  try {
+    const { error } = await getSB().from("premier_cars").upsert({
+      id: car.id,
+      data: car,
+      updated_at: new Date().toISOString()
+    }, { onConflict: "id" });
+    if (error) console.error("sbSaveCar error:", error.message);
+  } catch (e) { console.error("sbSaveCar exception", e); }
+}
+async function sbDeleteCar(id) {
+  if (_carsMode !== "rows") return;
+  try {
+    const { error } = await getSB().from("premier_cars").delete().eq("id", id);
+    if (error) console.error("sbDeleteCar error:", error.message);
+  } catch (e) { console.error("sbDeleteCar exception", e); }
+}
+async function sbSaveAllCars(cars) {
+  if (_carsMode === "rows") {
+    try {
+      const rows = cars.map(c => ({ id: c.id, data: c, updated_at: new Date().toISOString() }));
+      const { error } = await getSB().from("premier_cars").upsert(rows, { onConflict: "id" });
+      if (error) console.error("sbSaveAllCars error:", error.message);
+    } catch (e) { console.error("sbSaveAllCars exception", e); }
+  } else {
+    await sbSet("cars", cars);
+  }
+}
+
 // ═══ DEFAULT USERS ══════════════════════════════════════════════
 const DEFAULT_USERS = [{
   id: "u1",
@@ -2596,6 +2654,15 @@ function OverviewTab({
     variant: "ghost",
     small: true
   }, "\uD83D\uDCE4 Compartilhar Ficha"), /*#__PURE__*/React.createElement(Btn, {
+    onClick: () => {
+      const txt = `🚗 ${car.marca || ""} ${car.name} ${car.year || ""}\n📍 ${car.loja}\n🛣️ ${car.km ? Number(car.km).toLocaleString("pt-BR") + " km" : ""}\n🎨 ${car.color || ""}\n💰 ${car.precoVenda ? "R$ " + Number(car.precoVenda).toLocaleString("pt-BR", {
+        minimumFractionDigits: 2
+      }) : "Consulte"}\n\n${car.loja} — Fale conosco!`;
+      window.open("https://wa.me/?text=" + encodeURIComponent(txt), "_blank");
+    },
+    variant: "success",
+    small: true
+  }, "\uD83D\uDCAC WhatsApp"), /*#__PURE__*/React.createElement(Btn, {
     onClick: () => setShowPlacaFipe(true), variant: "info", small: true
   }, "\uD83D\uDD0D Consultar Placa"))), /*#__PURE__*/React.createElement("div", {
     style: {
@@ -2681,7 +2748,6 @@ function OverviewTab({
   }, "\u25CB ", c.total - c.done - c.inProg)))))));
 }
 
-// ═══ CHECKLIST TAB ══════════════════════════════════════════════
 function ChecklistTab({
   catKey,
   data,
@@ -3749,7 +3815,8 @@ function FinancialTab({
   suppliers,
   onChange,
   onMarkSold,
-  onOpenFipe
+  onOpenFipe,
+  onOpenPlacaFipe
 }) {
   const [nd, setNd] = useState("");
   const [nv, setNv] = useState("");
@@ -4076,19 +4143,16 @@ function FinancialTab({
     value: car.tabelaFipe || "",
     onChange: v => onChange("tabelaFipe", v),
     type: "number"
-  }), /*#__PURE__*/React.createElement("button", {
-    onClick: onOpenFipe,
-    style: {
-      marginTop: 4,
-      background: "none",
-      border: "none",
-      color: C.info,
-      cursor: "pointer",
-      fontSize: 11,
-      fontFamily: "inherit",
-      padding: 0
-    }
-  }, "\uD83D\uDD0D Buscar via API")), /*#__PURE__*/React.createElement(Inp, {
+  }), /*#__PURE__*/React.createElement("div", { style: { display: "flex", gap: 8, marginTop: 4 } },
+    /*#__PURE__*/React.createElement("button", {
+      onClick: onOpenPlacaFipe,
+      style: { background: "none", border: "none", color: C.red, cursor: "pointer", fontSize: 11, fontFamily: "inherit", padding: 0, fontWeight: 700 }
+    }, "\uD83D\uDD0D Consultar por Placa"),
+    /*#__PURE__*/React.createElement("button", {
+      onClick: onOpenFipe,
+      style: { background: "none", border: "none", color: C.info, cursor: "pointer", fontSize: 11, fontFamily: "inherit", padding: 0 }
+    }, "Buscar por modelo")
+  )), /*#__PURE__*/React.createElement(Inp, {
     label: "Pre\xE7o de venda (R$)",
     value: car.precoVenda || "",
     onChange: v => onChange("precoVenda", v),
@@ -4624,14 +4688,24 @@ function CarDetail({
   function handlePlacaFipeSelect(data) {
     const info = data.info;
     const fipe = data.fipe;
-    if (info.marca) upField("marca", info.marca.charAt(0) + info.marca.slice(1).toLowerCase());
-    if (info.modelo) upField("name", info.modelo);
-    if (info.ano_modelo || info.ano) upField("year", String(info.ano_modelo || info.ano));
-    if (info.cor) upField("color", info.cor);
-    if (info.combustivel) upField("combustivel", info.combustivel.split("/")[0].trim());
-    if (fipe) upField("tabelaFipe", String(fipe.valor));
+    // Build all updates in one setCar call so a single autoSave fires
+    setCar(p => {
+      const n = {
+        ...p,
+        ...(info.placa ? { plate: info.placa } : {}),
+        ...(info.marca ? { marca: info.marca.charAt(0) + info.marca.slice(1).toLowerCase() } : {}),
+        ...(info.modelo ? { name: info.modelo } : {}),
+        ...((info.ano_modelo || info.ano) ? { year: String(info.ano_modelo || info.ano) } : {}),
+        ...(info.cor ? { color: info.cor } : {}),
+        ...(info.combustivel ? { combustivel: info.combustivel.split("/")[0].trim() } : {}),
+        ...(fipe ? { tabelaFipe: String(fipe.valor) } : {}),
+      };
+      autoSave(n);
+      return n;
+    });
     setShowPlacaFipe(false);
-    pushNotif("✅ Dados preenchidos pela placa!", "success");
+    pushNotif("✅ Dados e FIPE preenchidos pela placa!", "success");
+    pushLog(`Consulta por placa: ${info.placa || ""} — ${info.modelo || ""}`, user.name, "info", "todos");
   }
   const days = daysSince(car.createdAt);
   const dc = car.status === "Vendido" ? C.textDim : dayColor(days);
@@ -4877,7 +4951,8 @@ function CarDetail({
     suppliers: suppliers || [],
     onChange: upField,
     onMarkSold: markSold,
-    onOpenFipe: () => setShowFipe(true)
+    onOpenFipe: () => setShowFipe(true),
+    onOpenPlacaFipe: () => setShowPlacaFipe(true)
   }), tab === "historico" && /*#__PURE__*/React.createElement(HistoricoTab, {
     car: car
   }), tab === "aprovacao" && CAN.approve(user.role) && /*#__PURE__*/React.createElement(ApprovalTab, {
@@ -5181,7 +5256,7 @@ function CarCard({
       flexWrap: "wrap",
       flex: 1
     }
-  }, car.loja && car.loja !== "Premier Multimarcas" && /*#__PURE__*/React.createElement("span", {
+  }, car.loja && /*#__PURE__*/React.createElement("span", {
     style: {
       background: C.info + "20",
       color: C.info,
@@ -5273,16 +5348,16 @@ function AddCarForm({
     const fipe = data.fipe;
     setCar(p => ({
       ...p,
-      plate: info.placa || p.plate,
-      marca: info.marca ? info.marca.charAt(0) + info.marca.slice(1).toLowerCase() : p.marca,
-      name: info.modelo || p.name,
-      year: String(info.ano_modelo || info.ano || p.year),
-      color: info.cor || p.color,
+      plate:       info.placa || p.plate,
+      marca:       info.marca ? info.marca.charAt(0) + info.marca.slice(1).toLowerCase() : p.marca,
+      name:        info.modelo || p.name,
+      year:        String(info.ano_modelo || info.ano || p.year),
+      color:       info.cor || p.color,
       combustivel: info.combustivel ? info.combustivel.split("/")[0].trim() : p.combustivel,
-      tabelaFipe: fipe ? String(fipe.valor) : p.tabelaFipe
+      tabelaFipe:  fipe ? String(fipe.valor) : p.tabelaFipe
     }));
     setShowPlacaFipe(false);
-    pushNotif("✅ Dados preenchidos pela placa!", "success");
+    pushNotif("✅ Dados e FIPE preenchidos pela placa!", "success");
   }
   return /*#__PURE__*/React.createElement("div", {
     style: {
@@ -6183,12 +6258,15 @@ function Dashboard({
   const [search, setSearch] = useState("");
   const [fStatus, setFStatus] = useState("Todos");
   const [fLoja, setFLoja] = useState("Todas");
+  const [verVendidos, setVerVendidos] = useState(false);
+  const totalVendidos = cars.filter(c => c.status === "Vendido").length;
   const fil = cars.filter(c => {
-    const matchS = fStatus === "Todos" || c.status === fStatus;
+    const matchV = verVendidos ? c.status === "Vendido" : c.status !== "Vendido";
+    const matchS = verVendidos || fStatus === "Todos" || c.status === fStatus;
     const matchL = fLoja === "Todas" || c.loja === fLoja;
     const q = search.toLowerCase();
     const matchQ = !q || (c.name || "").toLowerCase().includes(q) || (c.plate || "").toLowerCase().includes(q) || (c.marca || "").toLowerCase().includes(q);
-    return matchS && matchL && matchQ;
+    return matchV && matchS && matchL && matchQ;
   });
   let lucroTotal = 0;
   if (CAN.seeCusto(user.role)) cars.filter(c => c.status === "Vendido").forEach(c => {
@@ -6452,6 +6530,33 @@ function Dashboard({
     style: {
       display: "flex",
       gap: 6,
+      marginBottom: 9
+    }
+  }, [{
+    k: false,
+    label: "\uD83C\uDFEC Estoque Ativo"
+  }, {
+    k: true,
+    label: `🤝 Vendidos${totalVendidos ? " (" + totalVendidos + ")" : ""}`
+  }].map(t => /*#__PURE__*/React.createElement("button", {
+    key: String(t.k),
+    onClick: () => setVerVendidos(t.k),
+    style: {
+      flex: 1,
+      padding: "8px 0",
+      borderRadius: 9,
+      border: `1px solid ${verVendidos === t.k ? C.red : C.border}`,
+      background: verVendidos === t.k ? C.red + "20" : "transparent",
+      color: verVendidos === t.k ? C.red : C.textMuted,
+      cursor: "pointer",
+      fontSize: 12,
+      fontFamily: "inherit",
+      fontWeight: verVendidos === t.k ? 700 : 500
+    }
+  }, t.label))), /*#__PURE__*/React.createElement("div", {
+    style: {
+      display: "flex",
+      gap: 6,
       marginBottom: 8,
       overflowX: "auto",
       paddingBottom: 2
@@ -6472,7 +6577,7 @@ function Dashboard({
       whiteSpace: "nowrap",
       flexShrink: 0
     }
-  }, l))), /*#__PURE__*/React.createElement("div", {
+  }, l))), !verVendidos && /*#__PURE__*/React.createElement("div", {
     style: {
       display: "flex",
       gap: 6,
@@ -6480,7 +6585,7 @@ function Dashboard({
       overflowX: "auto",
       paddingBottom: 2
     }
-  }, ["Todos", ...STATUSES].map(s => /*#__PURE__*/React.createElement("button", {
+  }, ["Todos", ...STATUSES.filter(s => s !== "Vendido")].map(s => /*#__PURE__*/React.createElement("button", {
     key: s,
     onClick: () => setFStatus(s),
     style: {
@@ -6594,7 +6699,7 @@ function App() {
   }, []);
   async function loadAll() {
     try {
-      const [dbUsers, dbCars, dbSup, dbDark, dbDesp, dbLogs] = await Promise.all([sbGet("users"), sbGet("cars"), sbGet("suppliers"), sbGet("dark_mode"), sbGet("despesas_fixas"), sbGet("activity_log")]);
+      const [dbUsers, dbCars, dbSup, dbDark, dbDesp, dbLogs] = await Promise.all([sbGet("users"), sbLoadCars(), sbGet("suppliers"), sbGet("dark_mode"), sbGet("despesas_fixas"), sbGet("activity_log")]);
       if (dbUsers && Array.isArray(dbUsers) && dbUsers.length > 0) setUsers(dbUsers);else await sbSet("users", DEFAULT_USERS);
       if (dbCars && Array.isArray(dbCars)) setCars(dbCars);
       if (dbSup && Array.isArray(dbSup)) setSuppliers(dbSup);
@@ -6617,7 +6722,34 @@ function App() {
   }
   async function saveCars(c) {
     setCars(c);
-    await sbSet("cars", c);
+    if (_carsMode === "rows") {
+      await sbSaveAllCars(c);
+    } else {
+      await sbSet("cars", c);
+    }
+  }
+  function saveCar(car) {
+    setCars(prev => {
+      const exists = prev.some(c => c.id === car.id);
+      const upd = exists ? prev.map(c => c.id === car.id ? car : c) : [...prev, car];
+      if (_carsMode === "rows") {
+        sbSaveCar(car);
+      } else {
+        sbSet("cars", upd);
+      }
+      return upd;
+    });
+  }
+  function removeCar(id) {
+    setCars(prev => {
+      const upd = prev.filter(c => c.id !== id);
+      if (_carsMode === "rows") {
+        sbDeleteCar(id);
+      } else {
+        sbSet("cars", upd);
+      }
+      return upd;
+    });
   }
   async function saveSuppliers(s) {
     setSuppliers(s);
@@ -6663,8 +6795,14 @@ function App() {
     user: user,
     onBack: () => setView("dashboard"),
     onSave: car => {
-      const upd = [...cars, car];
-      saveCars(upd);
+      const norm = s => (s || "").replace(/[^a-zA-Z0-9]/g, "").toUpperCase();
+      const np = norm(car.plate);
+      const dup = np ? cars.find(c => norm(c.plate) === np) : null;
+      if (dup) {
+        pushNotif(`⚠️ Placa ${car.plate} já cadastrada: ${dup.marca || ""} ${dup.name}`.trim(), "error");
+        return;
+      }
+      saveCar(car);
       setSelectedCar(car);
       setView("carDetail");
       pushNotif(`🚗 ${car.marca || ""} ${car.name} cadastrado!`, "success");
@@ -6682,8 +6820,7 @@ function App() {
       setSelectedCar(null);
     },
     onSave: updated => {
-      const upd = cars.map(c => c.id === updated.id ? updated : c);
-      saveCars(upd);
+      saveCar(updated);
       setSelectedCar(updated);
       if (updated.status !== selectedCar.status) {
         pushLog(`Status alterado: ${selectedCar.name} → ${updated.status}`, user.name, "info");
@@ -6694,7 +6831,7 @@ function App() {
     },
     onDelete: id => {
       const car = cars.find(c => c.id === id);
-      saveCars(cars.filter(c => c.id !== id));
+      removeCar(id);
       setView("dashboard");
       setSelectedCar(null);
       pushNotif("🗑 Veículo removido", "warning");
