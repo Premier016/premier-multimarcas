@@ -176,6 +176,8 @@ const fmt = v => !v && v !== 0 ? "R$ —" : "R$ " + Number(v).toLocaleString("pt
 });
 const daysSince = d => d ? Math.floor((Date.now() - new Date(d).getTime()) / 86400000) : 0;
 const dayColor = d => d <= 30 ? C.success : d <= 60 ? C.warning : C.error;
+const todayISO = () => new Date().toISOString().split("T")[0];
+const daysUntil = d => d ? Math.ceil((new Date(d + "T00:00:00").getTime() - Date.now()) / 86400000) : null;
 const addMonths = (d, n) => {
   const x = new Date(d);
   x.setMonth(x.getMonth() + n);
@@ -416,6 +418,8 @@ function createCar(user) {
     origem: "Pessoa Física",
     loja: user.loja || "Premier Multimarcas",
     prestadorAtual: "",
+    prestadorEntrada: "",
+    prestadorPrazo: "",
     consignadoNome: "",
     consignadoCPF: "",
     consignadoTel: "",
@@ -1117,6 +1121,13 @@ function Inp({
   disabled,
   small
 }) {
+  const inputRef = useRef();
+  function openDatePicker() {
+    if (type !== "date" || disabled) return;
+    try {
+      if (inputRef.current && inputRef.current.showPicker) inputRef.current.showPicker();
+    } catch (e) {}
+  }
   return /*#__PURE__*/React.createElement("div", {
     style: {
       display: "flex",
@@ -1132,6 +1143,7 @@ function Inp({
       textTransform: "uppercase"
     }
   }, label), /*#__PURE__*/React.createElement("input", {
+    ref: inputRef,
     type: type,
     value: value || "",
     onChange: e => onChange(e.target.value),
@@ -1150,7 +1162,11 @@ function Inp({
       boxSizing: "border-box",
       opacity: disabled ? .5 : 1
     },
-    onFocus: e => e.target.style.borderColor = C.red,
+    onClick: openDatePicker,
+    onFocus: e => {
+      e.target.style.borderColor = C.red;
+      openDatePicker();
+    },
     onBlur: e => e.target.style.borderColor = C.border
   }));
 }
@@ -2661,6 +2677,16 @@ function OverviewTab({
     value: car.prestadorAtual || "",
     onChange: v => onUpdate("prestadorAtual", v),
     options: PRESTADORES
+  }), car.prestadorAtual && car.prestadorAtual !== "Sem prestador" && /*#__PURE__*/React.createElement(Inp, {
+    label: "Entrada no prestador",
+    value: car.prestadorEntrada || "",
+    onChange: v => onUpdate("prestadorEntrada", v),
+    type: "date"
+  }), car.prestadorAtual && car.prestadorAtual !== "Sem prestador" && /*#__PURE__*/React.createElement(Inp, {
+    label: "Prazo combinado",
+    value: car.prestadorPrazo || "",
+    onChange: v => onUpdate("prestadorPrazo", v),
+    type: "date"
   }), /*#__PURE__*/React.createElement(Sel, {
     label: "Combust\xEDvel",
     value: car.combustivel || "",
@@ -4869,8 +4895,20 @@ function CarDetail({
         pushNotif(`📋 ${v}`);
       }
       if (k === "prestadorAtual" && v && v !== "Sem prestador") {
+        n = {
+          ...n,
+          prestadorEntrada: p.prestadorAtual === v && p.prestadorEntrada ? p.prestadorEntrada : todayISO(),
+          prestadorPrazo: p.prestadorAtual === v ? p.prestadorPrazo || "" : ""
+        };
         n = addHist(n, `Enviado para: ${v}`);
         pushNotif(`🔧 Enviado para ${v}`, "warning");
+      }
+      if (k === "prestadorAtual" && (!v || v === "Sem prestador")) {
+        n = {
+          ...n,
+          prestadorEntrada: "",
+          prestadorPrazo: ""
+        };
       }
       autoSave(n);
       return n;
@@ -4970,6 +5008,7 @@ function CarDetail({
   const dc = car.status === "Vendido" ? C.textDim : dayColor(days);
   const isCatTab = Object.keys(CATS).includes(tab);
   const activeNav = isCatTab ? "prep" : tab;
+  const prestadorDias = car.prestadorAtual && car.prestadorAtual !== "Sem prestador" && car.prestadorPrazo ? daysUntil(car.prestadorPrazo) : null;
   const navItems = [{
     k: "overview",
     icon: "📋",
@@ -5119,7 +5158,18 @@ function CarDetail({
       flex: 1,
       justifyContent: "center"
     }
-  }, "\uD83D\uDCCB Checklist: ", car.prestadorAtual), car.status === "Em Preparação" && /*#__PURE__*/React.createElement(Btn, {
+  }, "\uD83D\uDCCB Checklist: ", car.prestadorAtual), prestadorDias !== null && /*#__PURE__*/React.createElement("div", {
+    style: {
+      flexBasis: "100%",
+      padding: "8px 10px",
+      borderRadius: 8,
+      border: `1px solid ${(prestadorDias < 0 ? C.error : prestadorDias <= 1 ? C.warning : C.success)}55`,
+      background: (prestadorDias < 0 ? C.error : prestadorDias <= 1 ? C.warning : C.success) + "16",
+      color: prestadorDias < 0 ? C.error : prestadorDias <= 1 ? C.warning : C.success,
+      fontSize: 11,
+      fontWeight: 700
+    }
+  }, prestadorDias < 0 ? `⚠️ Prazo do prestador vencido há ${Math.abs(prestadorDias)} dia(s)` : prestadorDias === 0 ? "⏱️ Prazo do prestador vence hoje" : `⏱️ Prazo do prestador: faltam ${prestadorDias} dia(s)`), car.status === "Em Preparação" && /*#__PURE__*/React.createElement(Btn, {
     onClick: () => up("status", "Aguardando Aprovação"),
     variant: "info",
     small: true,
@@ -5308,7 +5358,9 @@ function CarDetail({
       setCar(p => {
         const n = addHist({
           ...p,
-          prestadorAtual: ""
+          prestadorAtual: "",
+          prestadorEntrada: "",
+          prestadorPrazo: ""
         }, "Saída confirmada de " + p.prestadorAtual + " por " + user.name);
         onSave(n);
         return n;
@@ -5365,6 +5417,9 @@ function CarCard({
   const fipePct = precoVenda > 0 && tabelaFipe > 0 ? Math.round((precoVenda - tabelaFipe) / tabelaFipe * 100) : null;
   const garantiaDias = car.status === "Vendido" && car.garantiaAte ? Math.ceil((new Date(car.garantiaAte + "T00:00:00").getTime() - Date.now()) / 86400000) : null;
   const garantiaCol = garantiaDias === null ? null : garantiaDias < 0 ? C.textDim : garantiaDias <= 15 ? C.warning : C.success;
+  const prestadorDias = car.prestadorAtual && car.prestadorAtual !== "Sem prestador" && car.prestadorPrazo ? daysUntil(car.prestadorPrazo) : null;
+  const prestadorCol = prestadorDias === null ? C.warning : prestadorDias < 0 ? C.error : prestadorDias <= 1 ? C.warning : C.success;
+  const prestadorAtrasado = prestadorDias !== null && prestadorDias < 0;
   const stCol = ST_COL[car.status] || C.border;
   const foto = car.fotos && car.fotos.length > 0 ? car.fotos[0].url : null;
   const temFoto = !!foto;
@@ -5372,7 +5427,7 @@ function CarCard({
     onClick: onClick,
     style: {
       background: C.card,
-      border: `1px solid ${alerta ? C.warning : C.border}`,
+      border: `1px solid ${prestadorAtrasado ? C.error : alerta ? C.warning : C.border}`,
       borderRadius: 14,
       overflow: "hidden",
       cursor: "pointer",
@@ -5535,14 +5590,23 @@ function CarCard({
     }
   }, "\uD83D\uDCCD ", car.loja), car.prestadorAtual && car.prestadorAtual !== "Sem prestador" && /*#__PURE__*/React.createElement("span", {
     style: {
-      background: C.warning + "20",
-      color: C.warning,
+      background: prestadorCol + "20",
+      color: prestadorCol,
       borderRadius: 8,
       padding: "1px 7px",
       fontSize: 9,
       fontWeight: 700
     }
-  }, "\uD83D\uDD27 ", car.prestadorAtual), pecasPend > 0 && /*#__PURE__*/React.createElement("span", {
+  }, "\uD83D\uDD27 ", car.prestadorAtual), prestadorDias !== null && /*#__PURE__*/React.createElement("span", {
+    style: {
+      background: prestadorCol + "20",
+      color: prestadorCol,
+      borderRadius: 8,
+      padding: "1px 7px",
+      fontSize: 9,
+      fontWeight: 700
+    }
+  }, prestadorDias < 0 ? `Prazo +${Math.abs(prestadorDias)}d` : prestadorDias === 0 ? "Prazo hoje" : `Prazo ${prestadorDias}d`), pecasPend > 0 && /*#__PURE__*/React.createElement("span", {
     style: {
       background: C.error + "20",
       color: C.error,
@@ -6557,6 +6621,8 @@ function Dashboard({
   const [fLoja, setFLoja] = useState("Todas");
   const [verVendidos, setVerVendidos] = useState(false);
   const totalVendidos = cars.filter(c => c.status === "Vendido").length;
+  const noPrestador = cars.filter(c => c.prestadorAtual && c.prestadorAtual !== "Sem prestador").length;
+  const prestadorVencidos = cars.filter(c => c.prestadorAtual && c.prestadorAtual !== "Sem prestador" && c.prestadorPrazo && daysUntil(c.prestadorPrazo) < 0).length;
   const fil = cars.filter(c => {
     const matchV = verVendidos ? c.status === "Vendido" : c.status !== "Vendido";
     const matchS = verVendidos || fStatus === "Todos" || c.status === fStatus;
@@ -6593,6 +6659,16 @@ function Dashboard({
     v: cars.filter(c => c.status === "Pronto para Venda").length,
     col: C.success,
     icon: "✅"
+  }, {
+    l: "No prestador",
+    v: noPrestador,
+    col: C.warning,
+    icon: "🔧"
+  }, {
+    l: "Prazo vencido",
+    v: prestadorVencidos,
+    col: prestadorVencidos > 0 ? C.error : C.success,
+    icon: "⏱️"
   }, {
     l: "Vendidos",
     v: cars.filter(c => c.status === "Vendido").length,
