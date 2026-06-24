@@ -1,4 +1,4 @@
-<!DOCTYPE html>
+﻿<!DOCTYPE html>
 <html lang="pt-BR">
 <head>
   <meta charset="UTF-8"/>
@@ -183,6 +183,14 @@ const addMonths = (d, n) => {
 };
 const nowStr = () => new Date().toLocaleString("pt-BR");
 const uid = () => Date.now().toString(36) + Math.random().toString(36).slice(2, 7);
+const safeBottom = extra => `calc(${extra}px + env(safe-area-inset-bottom, 0px))`;
+function carShareText(car) {
+  const fotos = (car.fotos || []).map(f => f && f.url).filter(Boolean);
+  const fotoTxt = fotos.length ? `\n\nFotos do veiculo:\n${fotos.map((url, i) => `${i + 1}. ${url}`).join("\n")}` : "";
+  return `Carro: ${car.marca || ""} ${car.name} ${car.year || ""}\nLoja: ${car.loja}\nKM: ${car.km ? Number(car.km).toLocaleString("pt-BR") + " km" : ""}\nCor: ${car.color || ""}\nValor: ${car.precoVenda ? "R$ " + Number(car.precoVenda).toLocaleString("pt-BR", {
+    minimumFractionDigits: 2
+  }) : "Consulte"}${fotoTxt}\n\n${car.loja} - Fale conosco!`;
+}
 
 // ═══ SUPABASE ═══════════════════════════════════════════════════
 function getSB() {
@@ -252,7 +260,7 @@ async function sbLoadCars() {
       return Array.isArray(blob) ? blob : [];
     }
     _carsMode = "rows";
-    if (data && data.length > 0) return data.map(r => r.data);
+    if (data && data.length > 0) return data.map(r => ({ ...(r.data || {}), id: (r.data && r.data.id) || r.id }));
     // Tabela vazia: migra do blob antigo (uma vez), se existir
     const blob = await sbGet("cars");
     if (Array.isArray(blob) && blob.length > 0) {
@@ -2778,18 +2786,14 @@ function OverviewTab({
     }
   }, /*#__PURE__*/React.createElement(Btn, {
     onClick: () => {
-      const txt = `🚗 ${car.marca || ""} ${car.name} ${car.year || ""}\n📍 ${car.loja}\n🛣️ ${car.km ? Number(car.km).toLocaleString("pt-BR") + " km" : ""}\n🎨 ${car.color || ""}\n💰 ${car.precoVenda ? "R$ " + Number(car.precoVenda).toLocaleString("pt-BR", {
-        minimumFractionDigits: 2
-      }) : "Consulte"}\n\n${car.loja} — Fale conosco!`;
+      const txt = carShareText(car);
       navigator.clipboard.writeText(txt).then(() => pushNotif("📋 Ficha copiada!", "success")).catch(() => pushNotif("Não foi possível copiar", "error"));
     },
     variant: "ghost",
     small: true
   }, "\uD83D\uDCE4 Compartilhar Ficha"), /*#__PURE__*/React.createElement(Btn, {
     onClick: () => {
-      const txt = `🚗 ${car.marca || ""} ${car.name} ${car.year || ""}\n📍 ${car.loja}\n🛣️ ${car.km ? Number(car.km).toLocaleString("pt-BR") + " km" : ""}\n🎨 ${car.color || ""}\n💰 ${car.precoVenda ? "R$ " + Number(car.precoVenda).toLocaleString("pt-BR", {
-        minimumFractionDigits: 2
-      }) : "Consulte"}\n\n${car.loja} — Fale conosco!`;
+      const txt = carShareText(car);
       window.open("https://wa.me/?text=" + encodeURIComponent(txt), "_blank");
     },
     variant: "success",
@@ -5504,13 +5508,14 @@ function AddCarForm({
     style: {
       minHeight: "100vh",
       background: C.bg,
-      paddingBottom: 88
+      paddingBottom: safeBottom(88)
     }
   }, /*#__PURE__*/React.createElement("header", {
     style: {
       background: C.card,
       borderBottom: `1px solid ${C.border}`,
       padding: "10px 14px",
+      paddingTop: "calc(10px + env(safe-area-inset-top, 0px))",
       display: "flex",
       alignItems: "center",
       gap: 11,
@@ -5521,7 +5526,8 @@ function AddCarForm({
   }, /*#__PURE__*/React.createElement(Btn, {
     onClick: onBack,
     variant: "ghost",
-    small: true
+    small: true,
+    style: { minHeight: 36, minWidth: 72, justifyContent: "center" }
   }, "\u2190 Voltar"), /*#__PURE__*/React.createElement("div", {
     style: {
       fontSize: 14,
@@ -5533,6 +5539,7 @@ function AddCarForm({
   }, "\uD83D\uDD0D Consultar por Placa")), /*#__PURE__*/React.createElement("div", {
     style: {
       padding: "16px 14px",
+      paddingBottom: safeBottom(16),
       maxWidth: 700,
       margin: "0 auto",
       display: "flex",
@@ -5734,13 +5741,14 @@ function GarantiasScreen({
     style: {
       minHeight: "100vh",
       background: C.bg,
-      paddingBottom: 88
+      paddingBottom: safeBottom(88)
     }
   }, /*#__PURE__*/React.createElement("header", {
     style: {
       background: C.card,
       borderBottom: `1px solid ${C.border}`,
       padding: "10px 14px",
+      paddingTop: "calc(10px + env(safe-area-inset-top, 0px))",
       display: "flex",
       alignItems: "center",
       gap: 11,
@@ -5751,7 +5759,8 @@ function GarantiasScreen({
   }, /*#__PURE__*/React.createElement(Btn, {
     onClick: onBack,
     variant: "ghost",
-    small: true
+    small: true,
+    style: { minHeight: 36, minWidth: 72, justifyContent: "center" }
   }, "\u2190 Voltar"), /*#__PURE__*/React.createElement("div", {
     style: {
       fontSize: 14,
@@ -5767,6 +5776,7 @@ function GarantiasScreen({
   }, ativos.length, " ativas")), /*#__PURE__*/React.createElement("div", {
     style: {
       padding: "16px 14px",
+      paddingBottom: safeBottom(16),
       maxWidth: 900,
       margin: "0 auto"
     }
@@ -6841,11 +6851,11 @@ function App() {
   }, []);
   // Deep link (Bloco 2): abre o carro de ?carro=ID quando user+cars prontos
   useEffect(() => {
-    if (deepLinkDone || !ready || !user || cars.length === 0) return;
+    if (deepLinkDone || !ready || !user) return;
     try {
       const cid = new URLSearchParams(window.location.search).get("carro");
       if (cid) {
-        const alvo = cars.find(c => c.id === cid);
+        const alvo = cars.find(c => String(c.id) === String(cid));
         if (alvo) {
           setSelectedCar(alvo);
           setView("carDetail");
@@ -7078,3 +7088,4 @@ function App() {
   </script>
 </body>
 </html>
+
