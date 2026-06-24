@@ -24,6 +24,7 @@
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/react@18/umd/react.production.min.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/react-dom@18/umd/react-dom.production.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/qrcode-generator@1.4.4/qrcode.js"></script>
   <script>
 const {
   useState,
@@ -2426,11 +2427,142 @@ function PrestadorModal({
   }, "\u2705 Confirmar e Liberar"))));
 }
 
+// ═══ TAG NFC / QR (Bloco 2) ═════════════════════════════════════
+function carDeepLink(car) {
+  return `${window.location.origin}${window.location.pathname}?carro=${car.id}`;
+}
+function TagModal({
+  car,
+  onClose
+}) {
+  const url = carDeepLink(car);
+  const [qr, setQr] = useState(null);
+  const [nfcMsg, setNfcMsg] = useState("");
+  const nfcSupported = typeof window !== "undefined" && "NDEFReader" in window;
+  useEffect(() => {
+    try {
+      if (window.qrcode) {
+        const q = window.qrcode(0, "M");
+        q.addData(url);
+        q.make();
+        setQr(q.createDataURL(6, 12));
+      }
+    } catch (e) {
+      setQr(null);
+    }
+  }, [url]);
+  async function gravarNFC() {
+    if (!nfcSupported) {
+      setNfcMsg("Este aparelho/navegador não grava NFC pelo app. Use seu app de NFC com o link acima, ou imprima o QR.");
+      return;
+    }
+    try {
+      setNfcMsg("📡 Aproxime a tag NFC do aparelho...");
+      const ndef = new window.NDEFReader();
+      await ndef.write({
+        records: [{
+          recordType: "url",
+          data: url
+        }]
+      });
+      setNfcMsg("✅ Tag gravada com sucesso!");
+      pushNotif("✅ Tag NFC gravada!", "success");
+    } catch (e) {
+      setNfcMsg("Falha ao gravar: " + (e && e.message ? e.message : e));
+    }
+  }
+  function copiar() {
+    navigator.clipboard.writeText(url).then(() => pushNotif("📋 Link copiado!", "success")).catch(() => {});
+  }
+  return /*#__PURE__*/React.createElement(Modal, {
+    title: "\uD83C\uDFF7\uFE0F Etiqueta NFC / QR do Ve\xEDculo",
+    onClose: onClose,
+    width: 460
+  }, /*#__PURE__*/React.createElement("div", {
+    style: {
+      display: "flex",
+      flexDirection: "column",
+      gap: 14
+    }
+  }, /*#__PURE__*/React.createElement("div", {
+    style: {
+      fontSize: 12,
+      color: C.textMuted,
+      lineHeight: 1.5
+    }
+  }, "Grave o link abaixo numa tag NFC (ou imprima o QR). Ao encostar a tag ou ler o QR, o aparelho abre direto a ficha de ", /*#__PURE__*/React.createElement("b", {
+    style: { color: C.text }
+  }, car.marca ? car.marca + " " : "", car.name || "este veículo"), "."), /*#__PURE__*/React.createElement("div", {
+    style: {
+      display: "flex",
+      justifyContent: "center",
+      padding: 14,
+      background: "#fff",
+      borderRadius: 12
+    }
+  }, qr ? /*#__PURE__*/React.createElement("img", {
+    src: qr,
+    alt: "QR",
+    style: {
+      width: 200,
+      height: 200,
+      imageRendering: "pixelated"
+    }
+  }) : /*#__PURE__*/React.createElement("div", {
+    style: {
+      color: "#333",
+      fontSize: 12,
+      padding: 30,
+      textAlign: "center"
+    }
+  }, "N\xE3o foi poss\xEDvel gerar o QR agora. Use o link abaixo.")), /*#__PURE__*/React.createElement("div", {
+    style: {
+      background: C.bg,
+      border: `1px solid ${C.border}`,
+      borderRadius: 9,
+      padding: "10px 12px",
+      fontSize: 11,
+      color: C.info,
+      wordBreak: "break-all"
+    }
+  }, url), /*#__PURE__*/React.createElement("div", {
+    style: {
+      display: "flex",
+      gap: 8
+    }
+  }, /*#__PURE__*/React.createElement(Btn, {
+    onClick: copiar,
+    variant: "ghost",
+    small: true,
+    style: { flex: 1, justifyContent: "center" }
+  }, "\uD83D\uDCCB Copiar link"), /*#__PURE__*/React.createElement(Btn, {
+    onClick: gravarNFC,
+    variant: "info",
+    small: true,
+    style: { flex: 1, justifyContent: "center" }
+  }, "\uD83D\uDCE1 Gravar NFC")), nfcMsg && /*#__PURE__*/React.createElement("div", {
+    style: {
+      fontSize: 11,
+      color: C.textMuted,
+      background: C.bg,
+      borderRadius: 7,
+      padding: "8px 11px"
+    }
+  }, nfcMsg), !nfcSupported && /*#__PURE__*/React.createElement("div", {
+    style: {
+      fontSize: 10,
+      color: C.textDim,
+      lineHeight: 1.5
+    }
+  }, "\uD83D\uDCA1 No iPhone, grave a tag pelo seu app de NFC com o link acima \u2014 ao encostar, o iPhone abre a ficha sozinho.")));
+}
+
 // ═══ OVERVIEW TAB ════════════════════════════════════════════════
 function OverviewTab({
   car,
   onUpdate,
-  user
+  user,
+  onOpenTag
 }) {
   const cp = Object.entries(CATS).map(([k, v]) => {
     const d = car[k];
@@ -2664,7 +2796,11 @@ function OverviewTab({
     small: true
   }, "\uD83D\uDCAC WhatsApp"), /*#__PURE__*/React.createElement(Btn, {
     onClick: () => setShowPlacaFipe(true), variant: "info", small: true
-  }, "\uD83D\uDD0D Consultar Placa"))), /*#__PURE__*/React.createElement("div", {
+  }, "\uD83D\uDD0D Consultar Placa"), /*#__PURE__*/React.createElement(Btn, {
+    onClick: onOpenTag,
+    variant: "ghost",
+    small: true
+  }, "\uD83C\uDFF7\uFE0F Etiqueta/NFC"))), /*#__PURE__*/React.createElement("div", {
     style: {
       background: C.card,
       border: `1px solid ${C.border}`,
@@ -4578,6 +4714,7 @@ function CarDetail({
   const [showPrest, setShowPrest] = useState(false);
   const [showFipe, setShowFipe] = useState(false);
   const [showPlacaFipe, setShowPlacaFipe] = useState(false);
+  const [showTag, setShowTag] = useState(false);
   const [saved, setSaved] = useState(false);
   const saveTimer = useRef(null);
   function addHist(updated, acao) {
@@ -4925,7 +5062,8 @@ function CarDetail({
   }, tab === "overview" && /*#__PURE__*/React.createElement(OverviewTab, {
     car: car,
     onUpdate: up,
-    user: user
+    user: user,
+    onOpenTag: () => setShowTag(true)
   }), isCatTab && car[tab] && /*#__PURE__*/React.createElement(ChecklistTab, {
     catKey: tab,
     data: car[tab],
@@ -5063,6 +5201,9 @@ function CarDetail({
   }), showPlacaFipe && /*#__PURE__*/React.createElement(PlacaFipeModal, {
     onSelect: handlePlacaFipeSelect,
     onClose: () => setShowPlacaFipe(false)
+  }), showTag && /*#__PURE__*/React.createElement(TagModal, {
+    car: car,
+    onClose: () => setShowTag(false)
   }), /*#__PURE__*/React.createElement(BottomNav, {
     items: navItems.map(it => ({
       ...it,
@@ -6661,6 +6802,7 @@ function App() {
   const [showDespesas, setShowDespesas] = useState(false);
   const [showNotifs, setShowNotifs] = useState(false);
   const [showPesquisaPlaca, setShowPesquisaPlaca] = useState(false);
+  const [deepLinkDone, setDeepLinkDone] = useState(false);
   const notifs = useNotifications();
   useEffect(() => {
     _forceUpdate = setRenderKey;
@@ -6697,6 +6839,25 @@ function App() {
     document.head.appendChild(style);
     loadAll();
   }, []);
+  // Deep link (Bloco 2): abre o carro de ?carro=ID quando user+cars prontos
+  useEffect(() => {
+    if (deepLinkDone || !ready || !user || cars.length === 0) return;
+    try {
+      const cid = new URLSearchParams(window.location.search).get("carro");
+      if (cid) {
+        const alvo = cars.find(c => c.id === cid);
+        if (alvo) {
+          setSelectedCar(alvo);
+          setView("carDetail");
+          pushNotif("🏷️ Ficha aberta pela tag", "info");
+        } else {
+          pushNotif("Veículo da tag não encontrado", "warning");
+        }
+        window.history.replaceState({}, "", window.location.pathname);
+      }
+    } catch (e) {}
+    setDeepLinkDone(true);
+  }, [ready, user, cars, deepLinkDone]);
   async function loadAll() {
     try {
       const [dbUsers, dbCars, dbSup, dbDark, dbDesp, dbLogs] = await Promise.all([sbGet("users"), sbLoadCars(), sbGet("suppliers"), sbGet("dark_mode"), sbGet("despesas_fixas"), sbGet("activity_log")]);
