@@ -77,6 +77,8 @@ function applyTheme(dark) {
 // ═══ CONSTANTS ══════════════════════════════════════════════════
 const LOJAS = ["Premier Multimarcas", "Auto Fácil", "L.O.T"];
 const PRESTADORES = ["Sem prestador", "Mecânica", "Funilaria", "Tapeçaria", "Estética", "Elétrica", "Pneus/Rodas", "Martelinho", "Lavagem", "Outro"];
+const PRESTADOR_CATEGORIAS = PRESTADORES.filter(p => p !== "Sem prestador");
+const LEGACY_PRESTADOR_TIPOS = ["Funilaria", "Mecânica", "Tapeçaria", "Auto Elétrica", "Pneus/Rodas", "Estética", "Lavagem", "Martelinho", "Elétrica"];
 const STATUSES = ["Entrada", "Em Preparação", "Aguardando Aprovação", "Pronto para Venda", "Vendido"];
 const ST_COL = {
   "Entrada": "#6B7280",
@@ -86,7 +88,7 @@ const ST_COL = {
   "Vendido": "#8B5CF6"
 };
 const ORIGENS = ["Pessoa Física", "Leilão", "Consignado"];
-const FORN_TIPOS = ["Funilaria", "Mecânica", "Tapeçaria", "Auto Elétrica", "Pneus/Rodas", "Estética", "Outros"];
+const FORN_TIPOS = ["Autopeças", "Pneus", "Baterias", "Acessórios", "Óleo/Fluidos", "Documentação", "Outros"];
 const DOCS_LIST = ["CRLV", "Nota Fiscal de Compra", "Chave Principal", "Chave Reserva", "Laudo Cautelar", "Rastreador", "Manual do Proprietário", "DUT/Transferência"];
 const PECA_STATUS = ["Necessária", "Orçada", "Comprada", "Instalada"];
 const URGENCIA = ["Alta", "Média", "Baixa"];
@@ -113,7 +115,7 @@ const CAN = {
   suppliers: r => ["proprietario", "gerente"].includes(r),
   manageUsers: r => r === "proprietario"
 };
-const CATS = {
+const DEFAULT_CATS = {
   funilaria: {
     label: "Funilaria",
     icon: "⚒️",
@@ -169,6 +171,8 @@ const CATS = {
     items: ["Lavagem externa", "Lavagem interna", "Higienização completa", "Polimento", "Cristalização", "Limpeza do motor", "Renovação de plásticos", "Detalhamento", "Remoção de odores"]
   }
 };
+let CATS = { ...DEFAULT_CATS };
+let PREP_CATS_ALL = { ...DEFAULT_CATS };
 
 // ═══ HELPERS ════════════════════════════════════════════════════
 const fmt = v => !v && v !== 0 ? "R$ —" : "R$ " + Number(v).toLocaleString("pt-BR", {
@@ -186,6 +190,280 @@ const addMonths = (d, n) => {
 const nowStr = () => new Date().toLocaleString("pt-BR");
 const uid = () => Date.now().toString(36) + Math.random().toString(36).slice(2, 7);
 const safeBottom = extra => `calc(${extra}px + env(safe-area-inset-bottom, 0px))`;
+const PREP_COLORS = ["#E85D04", "#2563EB", "#059669", "#DC2626", "#B45309", "#7C3AED", "#0891B2", "#F59E0B", "#3B82F6", "#10B981"];
+function prepCategoriasDefaultList() {
+  return Object.entries(DEFAULT_CATS).map(([key, cat]) => ({
+    key,
+    label: cat.label,
+    icon: cat.icon,
+    col: cat.col,
+    items: [...(cat.items || [])],
+    ativo: true,
+    system: true
+  }));
+}
+function slugPrepKey(label) {
+  const s = (label || "categoria").normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase().replace(/[^a-z0-9]+/g, "_").replace(/^_+|_+$/g, "");
+  return s || "categoria";
+}
+function normalizePrepCategorias(list) {
+  const src = Array.isArray(list) && list.length > 0 ? list : prepCategoriasDefaultList();
+  const seen = new Set();
+  const normalized = src.map((cat, idx) => {
+    const base = DEFAULT_CATS[cat && cat.key] || {};
+    const label = (cat && cat.label || base.label || "Categoria").trim();
+    let key = (cat && cat.key || slugPrepKey(label)).trim();
+    if (!key) key = "categoria";
+    const original = key;
+    let n = 2;
+    while (seen.has(key)) key = `${original}_${n++}`;
+    seen.add(key);
+    return {
+      key,
+      label,
+      icon: cat && cat.icon || base.icon || "🔧",
+      col: cat && cat.col || base.col || PREP_COLORS[idx % PREP_COLORS.length],
+      items: Array.isArray(cat && cat.items) ? cat.items.filter(Boolean) : [...(base.items || [])],
+      ativo: cat && cat.ativo === false ? false : true,
+      system: !!(cat && cat.system || base.label)
+    };
+  });
+  prepCategoriasDefaultList().forEach(cat => {
+    if (!seen.has(cat.key)) normalized.push(cat);
+  });
+  return normalized;
+}
+function buildPrepCatsMap(config, activeOnly = true) {
+  const out = {};
+  normalizePrepCategorias(config).forEach(cat => {
+    if (activeOnly && cat.ativo === false) return;
+    out[cat.key] = {
+      label: cat.label,
+      icon: cat.icon,
+      col: cat.col,
+      items: [...(cat.items || [])],
+      ativo: cat.ativo !== false,
+      system: cat.system
+    };
+  });
+  return out;
+}
+function applyPrepCategoriasConfig(config) {
+  const normalized = normalizePrepCategorias(config);
+  PREP_CATS_ALL = buildPrepCatsMap(normalized, false);
+  CATS = buildPrepCatsMap(normalized, true);
+  return normalized;
+}
+function getPreparationCats(car) {
+  const cats = { ...CATS };
+  if (car) {
+    Object.keys(PREP_CATS_ALL).forEach(k => {
+      if (!cats[k] && car[k]) cats[k] = { ...PREP_CATS_ALL[k], label: `${PREP_CATS_ALL[k].label} (inativa)` };
+    });
+  }
+  return cats;
+}
+function prepCatInfo(key) {
+  return PREP_CATS_ALL[key] || CATS[key] || {
+    label: "Preparação",
+    icon: "🔧",
+    col: C.info,
+    items: []
+  };
+}
+function emptyPrepCategoryData(cat) {
+  return {
+    items: (cat.items || []).map(n => ({
+      name: n,
+      status: "pendente",
+      obs: "",
+      fornecedor: "",
+      changedBy: "",
+      changedAt: ""
+    })),
+    obs: ""
+  };
+}
+function prepDataForCar(car, key, cat) {
+  return car && car[key] ? car[key] : emptyPrepCategoryData(cat);
+}
+function ensureCarPreparationCategories(car, cats = CATS) {
+  const n = { ...car };
+  Object.entries(cats).forEach(([k, cat]) => {
+    if (!n[k]) n[k] = emptyPrepCategoryData(cat);
+  });
+  return n;
+}
+function isPrestadorLikeSupplier(s) {
+  return !!s && LEGACY_PRESTADOR_TIPOS.includes(s.tipo);
+}
+function fornecedoresDePecas(suppliers = []) {
+  return (suppliers || []).filter(s => !isPrestadorLikeSupplier(s));
+}
+function prestadorCategoria(tipo) {
+  if (tipo === "Auto Elétrica") return "Elétrica";
+  if (PRESTADOR_CATEGORIAS.includes(tipo)) return tipo;
+  return "Outro";
+}
+function migrateSupplierToPrestador(s) {
+  return {
+    id: uid(),
+    nome: s.nome || "",
+    telefone: s.tel || "",
+    endereco: "",
+    regiao: "",
+    categorias: [prestadorCategoria(s.tipo)],
+    capacidade: 1,
+    ativo: true,
+    obs: s.obs || "",
+    importedFromSupplier: s.id || true
+  };
+}
+function buildPrestadorOptions(prestadores = [], current = "") {
+  const nomes = [
+    "Sem prestador",
+    ...((prestadores || []).filter(p => p && p.ativo !== false).map(p => p.nome)),
+    current
+  ].map(v => (v || "").trim()).filter(Boolean);
+  return [...new Set(nomes)];
+}
+function prestadorCategoriasOptions(prestadores = [], current = "") {
+  const cats = [
+    ...PRESTADOR_CATEGORIAS,
+    ...((prestadores || []).flatMap(p => Array.isArray(p.categorias) ? p.categorias : [p.categoria]).filter(Boolean)),
+    current
+  ].map(v => (v || "").trim()).filter(Boolean);
+  return [...new Set(cats)];
+}
+function tituloCarro(c) {
+  return `${c.marca ? c.marca + " " : ""}${c.name || "Sem nome"}`.trim();
+}
+function docsDoCarro(car) {
+  return car.documentos && car.documentos.length > 0 ? car.documentos : DOCS_LIST.map(d => ({
+    nome: d,
+    ok: false,
+    obs: ""
+  }));
+}
+function resumoPreparacao(car) {
+  let total = 0;
+  let done = 0;
+  const categorias = [];
+  Object.entries(getPreparationCats(car)).forEach(([k, v]) => {
+    const d = prepDataForCar(car, k, v);
+    const items = d.items || [];
+    const pend = items.filter(i => i.status !== "concluído");
+    total += items.length;
+    done += items.filter(i => i.status === "concluído").length;
+    if (pend.length > 0) categorias.push({
+      key: k,
+      label: v.label,
+      pendentes: pend.length
+    });
+  });
+  return {
+    total,
+    done,
+    pendentes: Math.max(0, total - done),
+    pct: total ? Math.round(done / total * 100) : 0,
+    categorias
+  };
+}
+function pendenciasDoCarro(car) {
+  const pecas = car.pecas || [];
+  const pecasAComprar = pecas.filter(p => p.status === "Necessária" || p.status === "Orçada");
+  const pecasCompradas = pecas.filter(p => p.status === "Comprada");
+  const docsPend = docsDoCarro(car).filter(d => !d.ok);
+  const prep = resumoPreparacao(car);
+  const emPrestador = car.prestadorAtual && car.prestadorAtual !== "Sem prestador";
+  const prazoPrestador = emPrestador && car.prestadorPrazo ? daysUntil(car.prestadorPrazo) : null;
+  const docsPdfPendentes = [!car.documentoPdf ? "Documento PDF" : "", !car.vistoriaPdf ? "Vistoria PDF" : ""].filter(Boolean);
+  const vendido = car.status === "Vendido";
+  const pronto = car.status === "Pronto para Venda";
+  const prepPendente = !vendido && !pronto && (prep.pendentes > 0 || pecasAComprar.length > 0 || pecasCompradas.length > 0 || docsPend.length > 0 || docsPdfPendentes.length > 0 || emPrestador);
+  return {
+    pecasAComprar,
+    pecasCompradas,
+    docsPend,
+    docsPdfPendentes,
+    prep,
+    emPrestador,
+    prazoPrestador,
+    prepPendente,
+    parado: !vendido && daysSince(car.createdAt) > 30,
+    atrasado: prazoPrestador !== null && prazoPrestador < 0
+  };
+}
+function saudePreparacao(car) {
+  const p = pendenciasDoCarro(car);
+  const dias = daysSince(car.createdAt);
+  let score = 100;
+  const motivos = [];
+  if (car.status !== "Vendido" && dias > 15) {
+    const perda = Math.min(20, Math.ceil((dias - 15) / 5) * 3);
+    score -= perda;
+    motivos.push(`${dias} dias no estoque`);
+  }
+  if (p.pecasAComprar.length > 0) {
+    score -= Math.min(24, p.pecasAComprar.length * 8);
+    motivos.push(`${p.pecasAComprar.length} peça(s) a comprar`);
+  }
+  if (p.pecasCompradas.length > 0) {
+    score -= Math.min(20, p.pecasCompradas.length * 10);
+    motivos.push(`${p.pecasCompradas.length} peça(s) comprada(s) sem instalar`);
+  }
+  if (p.atrasado) {
+    score -= 20;
+    motivos.push("prestador atrasado");
+  } else if (p.prazoPrestador !== null && p.prazoPrestador <= 1) {
+    score -= 8;
+    motivos.push("prazo do prestador perto");
+  }
+  if (p.prep.pendentes > 0) {
+    score -= Math.min(25, Math.ceil(p.prep.pendentes * 1.2));
+    motivos.push(`${p.prep.pendentes} item(ns) de checklist`);
+  }
+  if (p.docsPend.length > 0) {
+    score -= Math.min(18, p.docsPend.length * 3);
+    motivos.push(`${p.docsPend.length} documento(s)`);
+  }
+  if (p.docsPdfPendentes.length > 0) {
+    score -= p.docsPdfPendentes.length * 6;
+    motivos.push(p.docsPdfPendentes.join(", "));
+  }
+  if (car.status !== "Vendido" && !car.precoVenda) {
+    score -= 8;
+    motivos.push("sem preço de venda");
+  }
+  if (car.status !== "Vendido" && (!car.fotos || car.fotos.length === 0)) {
+    score -= 6;
+    motivos.push("sem fotos");
+  }
+  if (car.status === "Vendido" && car.garantiaAte && daysUntil(car.garantiaAte) >= 0) {
+    score -= 5;
+    motivos.push("garantia ativa");
+  }
+  score = Math.max(0, Math.min(100, Math.round(score)));
+  const label = score >= 80 ? "Saudável" : score >= 50 ? "Atenção" : "Crítico";
+  const col = score >= 80 ? C.success : score >= 50 ? C.warning : C.error;
+  return {
+    score,
+    label,
+    col,
+    motivos: motivos.slice(0, 4)
+  };
+}
+function custoPorDiaParado(car) {
+  const base = Number(car.valorPago) || Number(car.consignadoValor) || 0;
+  const dias = car.status === "Vendido" ? 0 : daysSince(car.createdAt);
+  const diario = base > 0 ? base * 0.015 / 30 : 0;
+  return {
+    base,
+    dias,
+    diario,
+    total: diario * dias
+  };
+}
 function carShareText(car) {
   const opcionais = (car.opcionais || []).slice(0, 8).join(", ");
   return `${car.marca || ""} ${car.name || ""} ${car.year || ""}\nLoja: ${car.loja || "Premier Multimarcas"}\nPlaca: ${car.plate || "-"}\nKM: ${car.km ? Number(car.km).toLocaleString("pt-BR") + " km" : "-"}\nCor: ${car.color || "-"}\nCombustivel: ${car.combustivel || "-"}\nOpcionais: ${opcionais || "-"}\nValor: ${car.precoVenda ? "R$ " + Number(car.precoVenda).toLocaleString("pt-BR", {
@@ -393,17 +671,7 @@ const DEFAULT_USERS = [{
 function createCar(user) {
   const cats = {};
   Object.keys(CATS).forEach(k => {
-    cats[k] = {
-      items: CATS[k].items.map(n => ({
-        name: n,
-        status: "pendente",
-        obs: "",
-        fornecedor: "",
-        changedBy: "",
-        changedAt: ""
-      })),
-      obs: ""
-    };
+    cats[k] = emptyPrepCategoryData(CATS[k]);
   });
   return {
     id: uid(),
@@ -420,6 +688,15 @@ function createCar(user) {
     prestadorAtual: "",
     prestadorEntrada: "",
     prestadorPrazo: "",
+    prestadorServico: "",
+    prestadorCategoriaServico: "",
+    prestadorKmEntrada: "",
+    prestadorSaida: "",
+    prestadorKmSaida: "",
+    prestadorResponsavel: "",
+    prestadorResponsavelSaida: "",
+    prestadorItens: "",
+    prestadorHistorico: [],
     consignadoNome: "",
     consignadoCPF: "",
     consignadoTel: "",
@@ -1890,9 +2167,11 @@ function SuppliersModal({
   onClose
 }) {
   const [nome, setNome] = useState("");
-  const [tipo, setTipo] = useState("Mecânica");
+  const [tipo, setTipo] = useState("Autopeças");
   const [tel, setTel] = useState("");
   const [obs, setObs] = useState("");
+  const fornecedores = fornecedoresDePecas(suppliers);
+  const ocultos = (suppliers || []).length - fornecedores.length;
   function add() {
     if (!nome.trim()) return;
     onChange([...suppliers, {
@@ -1907,7 +2186,7 @@ function SuppliersModal({
     setObs("");
   }
   return /*#__PURE__*/React.createElement(Modal, {
-    title: "\uD83C\uDFE2 Fornecedores",
+    title: "\uD83C\uDFE2 Fornecedores de Pe\xE7as/Insumos",
     onClose: onClose,
     width: 660
   }, /*#__PURE__*/React.createElement("div", {
@@ -1971,20 +2250,30 @@ function SuppliersModal({
   })), /*#__PURE__*/React.createElement(Btn, {
     onClick: add,
     small: true
-  }, "Cadastrar"))), suppliers.length === 0 ? /*#__PURE__*/React.createElement("div", {
+  }, "Cadastrar"))), ocultos > 0 && /*#__PURE__*/React.createElement("div", {
+    style: {
+      background: C.warning + "12",
+      border: `1px solid ${C.warning}44`,
+      color: C.warning,
+      borderRadius: 9,
+      padding: "8px 11px",
+      fontSize: 11,
+      lineHeight: 1.45
+    }
+  }, ocultos, " cadastro(s) antigos com tipo de servi\xE7o foram preservados e separados para Prestadores."), fornecedores.length === 0 ? /*#__PURE__*/React.createElement("div", {
     style: {
       textAlign: "center",
       padding: "20px 0",
       color: C.textDim,
       fontSize: 12
     }
-  }, "Nenhum fornecedor cadastrado") : /*#__PURE__*/React.createElement("div", {
+  }, "Nenhum fornecedor de pe\xE7as cadastrado") : /*#__PURE__*/React.createElement("div", {
     style: {
       display: "flex",
       flexDirection: "column",
       gap: 6
     }
-  }, suppliers.map(s => /*#__PURE__*/React.createElement("div", {
+  }, fornecedores.map(s => /*#__PURE__*/React.createElement("div", {
     key: s.id,
     style: {
       background: C.bg,
@@ -2018,14 +2307,528 @@ function SuppliersModal({
   }, "Remover"))))));
 }
 
+// ═══ PRESTADORES MODAL ══════════════════════════════════════════
+function PrestadoresModal({
+  prestadores,
+  onChange,
+  onClose
+}) {
+  const [form, setForm] = useState({
+    nome: "",
+    telefone: "",
+    endereco: "",
+    regiao: "",
+    categoria: "Mecânica",
+    capacidade: "1",
+    obs: ""
+  });
+  const lista = prestadores || [];
+  const ativos = lista.filter(p => p.ativo !== false).length;
+  const [customCategorias, setCustomCategorias] = useState([]);
+  const [novaCategoria, setNovaCategoria] = useState("");
+  const categoriasOptions = [...new Set([...prestadorCategoriasOptions(lista, form.categoria), ...customCategorias])];
+  function set(k, v) {
+    setForm(p => ({
+      ...p,
+      [k]: v
+    }));
+  }
+  function addCategoria() {
+    const nome = novaCategoria.trim();
+    if (!nome) return;
+    setCustomCategorias(p => p.includes(nome) ? p : [...p, nome]);
+    set("categoria", nome);
+    setNovaCategoria("");
+    pushNotif("Categoria de prestador adicionada", "success");
+  }
+  function add() {
+    if (!form.nome.trim()) return;
+    onChange([...lista, {
+      id: uid(),
+      nome: form.nome.trim(),
+      telefone: form.telefone,
+      endereco: form.endereco,
+      regiao: form.regiao,
+      categorias: [form.categoria],
+      capacidade: Math.max(1, Number(form.capacidade) || 1),
+      ativo: true,
+      obs: form.obs,
+      createdAt: new Date().toISOString()
+    }]);
+    setForm({
+      nome: "",
+      telefone: "",
+      endereco: "",
+      regiao: "",
+      categoria: "Mecânica",
+      capacidade: "1",
+      obs: ""
+    });
+  }
+  function toggle(id) {
+    onChange(lista.map(p => p.id === id ? {
+      ...p,
+      ativo: p.ativo === false
+    } : p));
+  }
+  return /*#__PURE__*/React.createElement(Modal, {
+    title: "\uD83D\uDD27 Cadastro de Prestadores",
+    onClose: onClose,
+    width: 760
+  }, /*#__PURE__*/React.createElement("div", {
+    style: {
+      display: "flex",
+      flexDirection: "column",
+      gap: 13
+    }
+  }, /*#__PURE__*/React.createElement("div", {
+    style: {
+      display: "grid",
+      gridTemplateColumns: "repeat(auto-fit,minmax(130px,1fr))",
+      gap: 8
+    }
+  }, [{
+    l: "Prestadores",
+    v: lista.length,
+    c: C.info
+  }, {
+    l: "Ativos",
+    v: ativos,
+    c: C.success
+  }, {
+    l: "Pausados",
+    v: lista.length - ativos,
+    c: C.warning
+  }].map(x => /*#__PURE__*/React.createElement("div", {
+    key: x.l,
+    style: {
+      background: C.bg,
+      border: `1px solid ${C.border}`,
+      borderRadius: 9,
+      padding: "9px 11px"
+    }
+  }, /*#__PURE__*/React.createElement("div", {
+    style: {
+      fontSize: 21,
+      fontWeight: 800,
+      color: x.c
+    }
+  }, x.v), /*#__PURE__*/React.createElement("div", {
+    style: {
+      fontSize: 10,
+      color: C.textMuted,
+      marginTop: 2
+    }
+  }, x.l)))), /*#__PURE__*/React.createElement("div", {
+    style: {
+      background: C.bg,
+      border: `1px solid ${C.border}`,
+      borderRadius: 11,
+      padding: 14
+    }
+  }, /*#__PURE__*/React.createElement("div", {
+    style: {
+      color: C.red,
+      fontWeight: 800,
+      fontSize: 11,
+      marginBottom: 11
+    }
+  }, "NOVO PRESTADOR"), /*#__PURE__*/React.createElement("div", {
+    style: {
+      display: "grid",
+      gridTemplateColumns: "2fr 1fr 1fr",
+      gap: 9,
+      marginBottom: 9
+    }
+  }, /*#__PURE__*/React.createElement(Inp, {
+    label: "Nome da empresa",
+    value: form.nome,
+    onChange: v => set("nome", v),
+    small: true
+  }), /*#__PURE__*/React.createElement(Sel, {
+    label: "Categoria",
+    value: form.categoria,
+    onChange: v => set("categoria", v),
+    options: categoriasOptions,
+    small: true
+  }), /*#__PURE__*/React.createElement(Inp, {
+    label: "Capacidade",
+    value: form.capacidade,
+    onChange: v => set("capacidade", v),
+    type: "number",
+    small: true
+  })), /*#__PURE__*/React.createElement("div", {
+    style: {
+      display: "flex",
+      gap: 9,
+      alignItems: "flex-end",
+      marginBottom: 9
+    }
+  }, /*#__PURE__*/React.createElement("div", {
+    style: {
+      flex: 1
+    }
+  }, /*#__PURE__*/React.createElement(Inp, {
+    label: "Criar categoria se não existir",
+    value: novaCategoria,
+    onChange: setNovaCategoria,
+    placeholder: "Ex: chaveiro, vidraçaria, pintura...",
+    small: true
+  })), /*#__PURE__*/React.createElement(Btn, {
+    onClick: addCategoria,
+    small: true
+  }, "+ Categoria")), /*#__PURE__*/React.createElement("div", {
+    style: {
+      fontSize: 10,
+      color: C.textMuted,
+      margin: "-3px 0 9px"
+    }
+  }, "A categoria nova fica disponível para cadastrar este prestador e continua aparecendo quando existir prestador usando ela."), /*#__PURE__*/React.createElement("div", {
+    style: {
+      display: "grid",
+      gridTemplateColumns: "1fr 1fr",
+      gap: 9,
+      marginBottom: 9
+    }
+  }, /*#__PURE__*/React.createElement(Inp, {
+    label: "Telefone",
+    value: form.telefone,
+    onChange: v => set("telefone", v),
+    small: true
+  }), /*#__PURE__*/React.createElement(Inp, {
+    label: "Região / bairro",
+    value: form.regiao,
+    onChange: v => set("regiao", v),
+    small: true
+  })), /*#__PURE__*/React.createElement(Inp, {
+    label: "Endereço",
+    value: form.endereco,
+    onChange: v => set("endereco", v),
+    small: true
+  }), /*#__PURE__*/React.createElement("div", {
+    style: {
+      display: "flex",
+      gap: 9,
+      alignItems: "flex-end",
+      marginTop: 9
+    }
+  }, /*#__PURE__*/React.createElement("div", {
+    style: {
+      flex: 1
+    }
+  }, /*#__PURE__*/React.createElement(Inp, {
+    label: "Observações",
+    value: form.obs,
+    onChange: v => set("obs", v),
+    small: true
+  })), /*#__PURE__*/React.createElement(Btn, {
+    onClick: add,
+    small: true
+  }, "Cadastrar"))), lista.length === 0 ? /*#__PURE__*/React.createElement("div", {
+    style: {
+      textAlign: "center",
+      padding: "22px 0",
+      color: C.textDim,
+      fontSize: 12
+    }
+  }, "Nenhum prestador cadastrado") : /*#__PURE__*/React.createElement("div", {
+    style: {
+      display: "flex",
+      flexDirection: "column",
+      gap: 7
+    }
+  }, lista.map(p => {
+    const cats = Array.isArray(p.categorias) ? p.categorias.join(", ") : p.categoria || "Outro";
+    const ativo = p.ativo !== false;
+    return /*#__PURE__*/React.createElement("div", {
+      key: p.id,
+      style: {
+        background: C.bg,
+        border: `1px solid ${ativo ? C.success + "55" : C.warning + "55"}`,
+        borderRadius: 10,
+        padding: "10px 12px",
+        display: "flex",
+        gap: 10,
+        alignItems: "center"
+      }
+    }, /*#__PURE__*/React.createElement("div", {
+      style: {
+        flex: 1,
+        minWidth: 0
+      }
+    }, /*#__PURE__*/React.createElement("div", {
+      style: {
+        display: "flex",
+        gap: 6,
+        alignItems: "center",
+        flexWrap: "wrap"
+      }
+    }, /*#__PURE__*/React.createElement("span", {
+      style: {
+        fontWeight: 800,
+        fontSize: 13,
+        color: C.text
+      }
+    }, p.nome), /*#__PURE__*/React.createElement(Badge, {
+      label: ativo ? "Ativo" : "Pausado",
+      col: ativo ? C.success : C.warning
+    }), p.importedFromSupplier && /*#__PURE__*/React.createElement(Badge, {
+      label: "Importado",
+      col: C.info
+    })), /*#__PURE__*/React.createElement("div", {
+      style: {
+        fontSize: 11,
+        color: C.textMuted,
+        marginTop: 4
+      }
+    }, cats, " · Cap. ", p.capacidade || 1, p.regiao ? ` · ${p.regiao}` : "", p.telefone ? ` · ${p.telefone}` : "", p.obs ? ` · ${p.obs}` : "")), /*#__PURE__*/React.createElement(Btn, {
+      onClick: () => toggle(p.id),
+      variant: ativo ? "warning" : "success",
+      small: true
+    }, ativo ? "Pausar" : "Ativar"));
+  }))));
+}
+
+// ═══ PREPARAÇÃO CATEGORIAS MODAL ═══════════════════════════════
+function PrepCategoriasModal({
+  categorias,
+  onChange,
+  onClose
+}) {
+  const [lista, setLista] = useState(() => normalizePrepCategorias(categorias));
+  const [form, setForm] = useState({
+    label: "",
+    icon: "🔧",
+    col: PREP_COLORS[0],
+    itemsText: ""
+  });
+  function setFormField(k, v) {
+    setForm(p => ({
+      ...p,
+      [k]: v
+    }));
+  }
+  function updateCat(key, patch) {
+    setLista(p => p.map(c => c.key === key ? {
+      ...c,
+      ...patch
+    } : c));
+  }
+  function addCat() {
+    const label = form.label.trim();
+    if (!label) return;
+    const used = new Set(lista.map(c => c.key));
+    let key = slugPrepKey(label);
+    const original = key;
+    let n = 2;
+    while (used.has(key)) key = `${original}_${n++}`;
+    const items = form.itemsText.split(/\n|,/).map(x => x.trim()).filter(Boolean);
+    setLista(p => [...p, {
+      key,
+      label,
+      icon: form.icon || "🔧",
+      col: form.col || PREP_COLORS[p.length % PREP_COLORS.length],
+      items,
+      ativo: true,
+      system: false
+    }]);
+    setForm({
+      label: "",
+      icon: "🔧",
+      col: PREP_COLORS[(lista.length + 1) % PREP_COLORS.length],
+      itemsText: ""
+    });
+    pushNotif("Categoria de preparação adicionada", "success");
+  }
+  function salvar() {
+    onChange(normalizePrepCategorias(lista));
+    pushNotif("Preparação atualizada", "success");
+  }
+  return /*#__PURE__*/React.createElement(Modal, {
+    title: "🔧 Editar Preparação",
+    onClose: onClose,
+    width: 860
+  }, /*#__PURE__*/React.createElement("div", {
+    style: {
+      display: "flex",
+      flexDirection: "column",
+      gap: 12
+    }
+  }, /*#__PURE__*/React.createElement("div", {
+    style: {
+      background: C.info + "12",
+      border: `1px solid ${C.info}44`,
+      color: C.info,
+      borderRadius: 10,
+      padding: "9px 11px",
+      fontSize: 11,
+      fontWeight: 700,
+      lineHeight: 1.45
+    }
+  }, "Inativar uma categoria remove ela dos carros novos, mas não apaga dados dos carros antigos. Renomear mantém a chave interna para preservar o histórico."), /*#__PURE__*/React.createElement("div", {
+    style: {
+      background: C.bg,
+      border: `1px solid ${C.border}`,
+      borderRadius: 11,
+      padding: 14
+    }
+  }, /*#__PURE__*/React.createElement("div", {
+    style: {
+      color: C.red,
+      fontWeight: 800,
+      fontSize: 11,
+      marginBottom: 10
+    }
+  }, "NOVA CATEGORIA"), /*#__PURE__*/React.createElement("div", {
+    style: {
+      display: "grid",
+      gridTemplateColumns: "repeat(auto-fit,minmax(120px,1fr))",
+      gap: 9,
+      marginBottom: 9
+    }
+  }, /*#__PURE__*/React.createElement(Inp, {
+    label: "Nome",
+    value: form.label,
+    onChange: v => setFormField("label", v),
+    placeholder: "Ex: Chaveiro, Vidros, Pintura...",
+    small: true
+  }), /*#__PURE__*/React.createElement(Inp, {
+    label: "Ícone",
+    value: form.icon,
+    onChange: v => setFormField("icon", v),
+    small: true
+  }), /*#__PURE__*/React.createElement(Inp, {
+    label: "Cor",
+    value: form.col,
+    onChange: v => setFormField("col", v),
+    type: "color",
+    small: true
+  })), /*#__PURE__*/React.createElement(Txta, {
+    label: "Itens padrão",
+    value: form.itemsText,
+    onChange: v => setFormField("itemsText", v),
+    rows: 2,
+    placeholder: "Um item por linha. Se deixar vazio, a categoria começa vazia e você adiciona itens na ficha."
+  }), /*#__PURE__*/React.createElement("div", {
+    style: {
+      display: "flex",
+      justifyContent: "flex-end",
+      marginTop: 9
+    }
+  }, /*#__PURE__*/React.createElement(Btn, {
+    onClick: addCat,
+    small: true
+  }, "+ Adicionar categoria"))), /*#__PURE__*/React.createElement("div", {
+    style: {
+      display: "flex",
+      flexDirection: "column",
+      gap: 8
+    }
+  }, lista.map(cat => /*#__PURE__*/React.createElement("div", {
+    key: cat.key,
+    style: {
+      background: C.bg,
+      border: `1px solid ${cat.ativo === false ? C.warning + "55" : C.border}`,
+      borderRadius: 11,
+      padding: 12
+    }
+  }, /*#__PURE__*/React.createElement("div", {
+    style: {
+      display: "grid",
+      gridTemplateColumns: "repeat(auto-fit,minmax(110px,1fr))",
+      gap: 8,
+      alignItems: "end"
+    }
+  }, /*#__PURE__*/React.createElement(Inp, {
+    label: "Nome da categoria",
+    value: cat.label,
+    onChange: v => updateCat(cat.key, {
+      label: v
+    }),
+    small: true
+  }), /*#__PURE__*/React.createElement(Inp, {
+    label: "Ícone",
+    value: cat.icon,
+    onChange: v => updateCat(cat.key, {
+      icon: v
+    }),
+    small: true
+  }), /*#__PURE__*/React.createElement(Inp, {
+    label: "Cor",
+    value: cat.col,
+    onChange: v => updateCat(cat.key, {
+      col: v
+    }),
+    type: "color",
+    small: true
+  }), /*#__PURE__*/React.createElement(Btn, {
+    onClick: () => updateCat(cat.key, {
+      ativo: cat.ativo === false
+    }),
+    variant: cat.ativo === false ? "success" : "warning",
+    small: true
+  }, cat.ativo === false ? "Reativar" : "Inativar")), /*#__PURE__*/React.createElement("div", {
+    style: {
+      marginTop: 8
+    }
+  }, /*#__PURE__*/React.createElement(Txta, {
+    label: "Itens padrão desta categoria",
+    value: (cat.items || []).join("\n"),
+    onChange: v => updateCat(cat.key, {
+      items: v.split("\n").map(x => x.trim()).filter(Boolean)
+    }),
+    rows: 2
+  })), /*#__PURE__*/React.createElement("div", {
+    style: {
+      display: "flex",
+      gap: 6,
+      marginTop: 7,
+      flexWrap: "wrap"
+    }
+  }, /*#__PURE__*/React.createElement(Badge, {
+    label: cat.ativo === false ? "Inativa" : "Ativa",
+    col: cat.ativo === false ? C.warning : C.success
+  }), cat.system && /*#__PURE__*/React.createElement(Badge, {
+    label: "Padrão",
+    col: C.info
+  }), /*#__PURE__*/React.createElement("span", {
+    style: {
+      color: C.textDim,
+      fontSize: 10,
+      alignSelf: "center"
+    }
+  }, "Chave: ", cat.key))))), /*#__PURE__*/React.createElement("div", {
+    style: {
+      display: "flex",
+      gap: 9,
+      justifyContent: "flex-end",
+      paddingTop: 4
+    }
+  }, /*#__PURE__*/React.createElement(Btn, {
+    onClick: onClose,
+    variant: "ghost"
+  }, "Fechar"), /*#__PURE__*/React.createElement(Btn, {
+    onClick: salvar,
+    variant: "success"
+  }, "Salvar alterações"))));
+}
+
 // ═══ LOGÍSTICA / PRESTADORES MODAL ═══════════════════════════════
 function LogisticaModal({
   cars,
+  prestadores = [],
   onSelectCar,
   onClose
 }) {
   const emPrestador = cars.filter(c => c.prestadorAtual && c.prestadorAtual !== "Sem prestador");
-  const grupos = PRESTADORES.filter(p => p !== "Sem prestador").map(nome => {
+  const cadastrados = (prestadores || []).filter(p => p && p.nome && p.ativo !== false);
+  const prestadorMap = new Map((prestadores || []).filter(p => p && p.nome).map(p => [p.nome, p]));
+  const prestadoresNaoCadastrados = emPrestador.filter(c => !prestadorMap.has(c.prestadorAtual));
+  const nomes = [...new Set([
+    ...cadastrados.map(p => p.nome)
+  ].filter(Boolean))];
+  const grupos = nomes.map(nome => {
+    const cad = prestadorMap.get(nome);
     const fila = emPrestador.filter(c => c.prestadorAtual === nome).sort((a, b) => {
       const da = a.prestadorPrazo ? daysUntil(a.prestadorPrazo) : 999;
       const db = b.prestadorPrazo ? daysUntil(b.prestadorPrazo) : 999;
@@ -2040,16 +2843,64 @@ function LogisticaModal({
       nome,
       fila,
       vencidos,
-      vencendo
+      vencendo,
+      capacidade: Math.max(1, Number(cad && cad.capacidade) || 1),
+      vagas: Math.max(0, (Math.max(1, Number(cad && cad.capacidade) || 1)) - fila.length),
+      regiao: cad && cad.regiao || "",
+      categorias: cad && cad.categorias || [],
+      cadastrado: !!cad
     };
   });
-  const sugerido = [...grupos].sort((a, b) => a.vencidos - b.vencidos || a.fila.length - b.fila.length || a.vencendo - b.vencendo)[0];
-  const totalVencidos = grupos.reduce((s, g) => s + g.vencidos, 0);
-  const totalVencendo = grupos.reduce((s, g) => s + g.vencendo, 0);
+  const elegiveis = grupos.filter(g => g.cadastrado || cadastrados.length === 0);
+  const sugerido = [...elegiveis].sort((a, b) => a.vencidos - b.vencidos || b.vagas - a.vagas || a.fila.length - b.fila.length || a.vencendo - b.vencendo)[0];
+  const totalVencidos = emPrestador.filter(c => c.prestadorPrazo && daysUntil(c.prestadorPrazo) < 0).length;
+  const totalVencendo = emPrestador.filter(c => {
+    const d = c.prestadorPrazo ? daysUntil(c.prestadorPrazo) : null;
+    return d !== null && d >= 0 && d <= 1;
+  }).length;
+  const ranking = grupos.filter(g => g.cadastrado || g.fila.length > 0).map(g => {
+    const diasMedios = g.fila.length ? Math.round(g.fila.reduce((s, c) => s + daysSince(c.prestadorEntrada || c.createdAt), 0) / g.fila.length) : 0;
+    const ocupacao = Math.round(g.fila.length / Math.max(1, g.capacidade) * 100);
+    const acimaCapacidade = Math.max(0, g.fila.length - g.capacidade);
+    const score = Math.max(0, Math.min(100, 100 - g.vencidos * 24 - g.vencendo * 8 - acimaCapacidade * 12 - Math.max(0, diasMedios - 3) * 3));
+    return {
+      ...g,
+      diasMedios,
+      ocupacao,
+      score,
+      scoreCol: score >= 80 ? C.success : score >= 50 ? C.warning : C.error
+    };
+  }).sort((a, b) => b.score - a.score || a.vencidos - b.vencidos || b.vagas - a.vagas || a.fila.length - b.fila.length);
+  const gargaloMap = new Map();
+  function addGargalo(nome, carros = 1, pendencias = 1, col = C.warning) {
+    if (!nome) return;
+    const cur = gargaloMap.get(nome) || {
+      nome,
+      carros: 0,
+      pendencias: 0,
+      col
+    };
+    cur.carros += carros;
+    cur.pendencias += pendencias;
+    cur.col = cur.col === C.error || col === C.error ? C.error : cur.col === C.warning || col === C.warning ? C.warning : col;
+    gargaloMap.set(nome, cur);
+  }
+  cars.filter(c => c.status !== "Vendido" && c.status !== "Pronto para Venda").forEach(c => {
+    const p = pendenciasDoCarro(c);
+    p.prep.categorias.forEach(cat => addGargalo(cat.label, 1, cat.pendentes, C.info));
+    if (p.pecasAComprar.length > 0) addGargalo("Peças a comprar", 1, p.pecasAComprar.length, C.warning);
+    if (p.pecasCompradas.length > 0) addGargalo("Peças compradas sem instalar", 1, p.pecasCompradas.length, C.error);
+    if (p.docsPend.length > 0 || p.docsPdfPendentes.length > 0) addGargalo("Documentos / vistoria", 1, p.docsPend.length + p.docsPdfPendentes.length, C.warning);
+    if (p.atrasado) addGargalo("Prestador atrasado", 1, Math.abs(p.prazoPrestador || 0) || 1, C.error);
+    if (p.parado) addGargalo("Carro parado +30d", 1, daysSince(c.createdAt), C.error);
+    if (c.status !== "Vendido" && !c.precoVenda) addGargalo("Sem preço definido", 1, 1, C.warning);
+    if (c.status !== "Vendido" && (!c.fotos || c.fotos.length === 0)) addGargalo("Sem fotos", 1, 1, C.warning);
+  });
+  const gargalos = [...gargaloMap.values()].sort((a, b) => b.pendencias - a.pendencias || b.carros - a.carros).slice(0, 8);
   return /*#__PURE__*/React.createElement(Modal, {
     title: "\uD83D\uDD27 Log\xEDstica / Prestadores",
     onClose: onClose,
-    width: 760
+    width: 860
   }, /*#__PURE__*/React.createElement("div", {
     style: {
       display: "flex",
@@ -2074,6 +2925,10 @@ function LogisticaModal({
     l: "Vence hoje/amanhã",
     v: totalVencendo,
     c: totalVencendo ? C.warning : C.success
+  }, {
+    l: "Cadastrados",
+    v: cadastrados.length,
+    c: cadastrados.length ? C.info : C.warning
   }, {
     l: "Sugestão",
     v: sugerido ? sugerido.nome : "—",
@@ -2112,7 +2967,161 @@ function LogisticaModal({
       borderRadius: 10,
       padding: "9px 11px"
     }
-  }, "Fornecedores continuam separados. Aqui ficam os prestadores da prepara\xE7\xE3o, carga atual, atrasos e sugest\xE3o de menor fila."), grupos.map(g => {
+  }, "Fornecedores continuam separados. Aqui ficam os prestadores cadastrados da prepara\xE7\xE3o, carga atual, atrasos e sugest\xE3o de menor fila."), prestadoresNaoCadastrados.length > 0 && /*#__PURE__*/React.createElement("div", {
+    style: {
+      background: C.warning + "12",
+      border: `1px solid ${C.warning}44`,
+      borderRadius: 10,
+      padding: "9px 11px",
+      color: C.warning,
+      fontSize: 11,
+      lineHeight: 1.45
+    }
+  }, prestadoresNaoCadastrados.length, " carro(s) ainda est\xE3o com prestador antigo sem cadastro. Cadastre a empresa real e atualize a ficha do carro para entrar na fila correta."), /*#__PURE__*/React.createElement("div", {
+    style: {
+      display: "grid",
+      gridTemplateColumns: "repeat(auto-fit,minmax(260px,1fr))",
+      gap: 10
+    }
+  }, /*#__PURE__*/React.createElement("div", {
+    style: {
+      background: C.card,
+      border: `1px solid ${C.border}`,
+      borderRadius: 11,
+      padding: 13
+    }
+  }, /*#__PURE__*/React.createElement("div", {
+    style: {
+      color: C.error,
+      fontWeight: 900,
+      fontSize: 12,
+      marginBottom: 9,
+      letterSpacing: .5
+    }
+  }, "\uD83D\uDCCD MAPA DE GARGALOS"), gargalos.length === 0 ? /*#__PURE__*/React.createElement("div", {
+    style: {
+      color: C.textMuted,
+      fontSize: 12,
+      padding: "8px 0"
+    }
+  }, "Nenhum gargalo relevante agora.") : gargalos.map(g => {
+    const maxPend = Math.max(1, gargalos[0].pendencias);
+    const pct = Math.max(8, Math.round(g.pendencias / maxPend * 100));
+    return /*#__PURE__*/React.createElement("div", {
+      key: g.nome,
+      style: {
+        marginBottom: 8
+      }
+    }, /*#__PURE__*/React.createElement("div", {
+      style: {
+        display: "flex",
+        justifyContent: "space-between",
+        gap: 8,
+        marginBottom: 3
+      }
+    }, /*#__PURE__*/React.createElement("span", {
+      style: {
+        color: C.text,
+        fontSize: 12,
+        fontWeight: 800,
+        overflow: "hidden",
+        textOverflow: "ellipsis",
+        whiteSpace: "nowrap"
+      }
+    }, g.nome), /*#__PURE__*/React.createElement("span", {
+      style: {
+        color: g.col,
+        fontSize: 11,
+        fontWeight: 900,
+        whiteSpace: "nowrap"
+      }
+    }, g.carros, " carro(s)")), /*#__PURE__*/React.createElement("div", {
+      style: {
+        height: 5,
+        background: C.border,
+        borderRadius: 3,
+        overflow: "hidden"
+      }
+    }, /*#__PURE__*/React.createElement("div", {
+      style: {
+        height: "100%",
+        width: `${pct}%`,
+        background: g.col,
+        borderRadius: 3
+      }
+    })));
+  })), /*#__PURE__*/React.createElement("div", {
+    style: {
+      background: C.card,
+      border: `1px solid ${C.border}`,
+      borderRadius: 11,
+      padding: 13
+    }
+  }, /*#__PURE__*/React.createElement("div", {
+    style: {
+      color: C.info,
+      fontWeight: 900,
+      fontSize: 12,
+      marginBottom: 9,
+      letterSpacing: .5
+    }
+  }, "\uD83C\uDFC1 RANKING ATUAL DE PRESTADORES"), ranking.length === 0 ? /*#__PURE__*/React.createElement("div", {
+    style: {
+      color: C.textMuted,
+      fontSize: 12,
+      padding: "8px 0"
+    }
+  }, "Cadastre prestadores ou envie carros para montar o ranking.") : ranking.slice(0, 6).map((r, idx) => /*#__PURE__*/React.createElement("div", {
+    key: r.nome,
+    style: {
+      display: "flex",
+      alignItems: "center",
+      gap: 9,
+      padding: "7px 0",
+      borderBottom: idx < Math.min(5, ranking.length - 1) ? `1px solid ${C.border}77` : "none"
+    }
+  }, /*#__PURE__*/React.createElement("div", {
+    style: {
+      width: 24,
+      height: 24,
+      borderRadius: 7,
+      background: r.scoreCol + "22",
+      color: r.scoreCol,
+      display: "flex",
+      alignItems: "center",
+      justifyContent: "center",
+      fontWeight: 900,
+      fontSize: 11,
+      flexShrink: 0
+    }
+  }, idx + 1), /*#__PURE__*/React.createElement("div", {
+    style: {
+      flex: 1,
+      minWidth: 0
+    }
+  }, /*#__PURE__*/React.createElement("div", {
+    style: {
+      color: C.text,
+      fontSize: 12,
+      fontWeight: 800,
+      overflow: "hidden",
+      textOverflow: "ellipsis",
+      whiteSpace: "nowrap"
+    }
+  }, r.nome), /*#__PURE__*/React.createElement("div", {
+    style: {
+      color: C.textMuted,
+      fontSize: 10,
+      marginTop: 1
+    }
+  }, r.fila.length, "/", r.capacidade, " carro(s) · ", r.ocupacao, "% ocup. · ", r.diasMedios, "d médio · ", r.vencidos, " vencido(s)")), /*#__PURE__*/React.createElement("div", {
+    style: {
+      color: r.scoreCol,
+      fontWeight: 900,
+      fontSize: 15,
+      flexShrink: 0
+    }
+  }, r.score))))), grupos.map(g => {
     const col = g.vencidos ? C.error : g.vencendo ? C.warning : g.fila.length ? C.info : C.success;
     return /*#__PURE__*/React.createElement("div", {
       key: g.nome,
@@ -2133,11 +3142,27 @@ function LogisticaModal({
       }
     }, /*#__PURE__*/React.createElement("div", {
       style: {
+        minWidth: 0
+      }
+    }, /*#__PURE__*/React.createElement("div", {
+      style: {
         color: col,
         fontWeight: 800,
-        fontSize: 13
+        fontSize: 13,
+        overflow: "hidden",
+        textOverflow: "ellipsis",
+        whiteSpace: "nowrap"
       }
-    }, g.nome), /*#__PURE__*/React.createElement("div", {
+    }, g.nome), (g.regiao || g.categorias.length > 0) && /*#__PURE__*/React.createElement("div", {
+      style: {
+        fontSize: 10,
+        color: C.textMuted,
+        marginTop: 2,
+        overflow: "hidden",
+        textOverflow: "ellipsis",
+        whiteSpace: "nowrap"
+      }
+    }, g.regiao || "", g.regiao && g.categorias.length > 0 ? " · " : "", g.categorias.join(", "))), /*#__PURE__*/React.createElement("div", {
       style: {
         display: "flex",
         gap: 6,
@@ -2145,8 +3170,11 @@ function LogisticaModal({
         justifyContent: "flex-end"
       }
     }, /*#__PURE__*/React.createElement(Badge, {
-      label: `${g.fila.length} carro(s)`,
+      label: `${g.fila.length}/${g.capacidade} carro(s)`,
       col: col
+    }), /*#__PURE__*/React.createElement(Badge, {
+      label: `${g.vagas} vaga(s)`,
+      col: g.vagas > 0 ? C.success : C.warning
     }), g.vencidos > 0 && /*#__PURE__*/React.createElement(Badge, {
       label: `${g.vencidos} vencido(s)`,
       col: C.error
@@ -2200,7 +3228,7 @@ function LogisticaModal({
           fontSize: 11,
           color: C.textMuted
         }
-      }, c.plate || "—", c.prestadorEntrada ? ` · Entrada ${new Date(c.prestadorEntrada + "T00:00:00").toLocaleDateString("pt-BR")}` : "")), /*#__PURE__*/React.createElement("div", {
+      }, c.plate || "—", c.prestadorEntrada ? ` · Entrada ${new Date(c.prestadorEntrada + "T00:00:00").toLocaleDateString("pt-BR")}` : "", c.prestadorServico ? ` · ${c.prestadorServico}` : "", c.prestadorKmEntrada ? ` · KM ${Number(c.prestadorKmEntrada).toLocaleString("pt-BR")}` : "")), /*#__PURE__*/React.createElement("div", {
         style: {
           color: dCol,
           fontSize: 11,
@@ -2210,6 +3238,334 @@ function LogisticaModal({
       }, d === null ? "Sem prazo" : d < 0 ? `+${Math.abs(d)}d` : d === 0 ? "Hoje" : `${d}d`));
     }));
   })));
+}
+
+// ═══ CENTRO DE PENDÊNCIAS MODAL ═════════════════════════════════
+function CentroPendenciasModal({
+  cars,
+  onSelectCar,
+  onClose
+}) {
+  const [loja, setLoja] = useState("Todas");
+  const ativos = (cars || []).filter(c => c.status !== "Vendido");
+  const filtrados = ativos.filter(c => loja === "Todas" || c.loja === loja);
+  const dados = filtrados.map(car => ({
+    car,
+    p: pendenciasDoCarro(car)
+  }));
+  const pecasComprar = dados.flatMap(x => x.p.pecasAComprar.map(peca => ({
+    car: x.car,
+    peca
+  })));
+  const pecasInstalar = dados.flatMap(x => x.p.pecasCompradas.map(peca => ({
+    car: x.car,
+    peca
+  })));
+  const docsPendentes = dados.filter(x => x.p.docsPend.length > 0 || x.p.docsPdfPendentes.length > 0);
+  const prepPendente = dados.filter(x => x.p.prepPendente).sort((a, b) => b.p.prep.pendentes - a.p.prep.pendentes || daysSince(b.car.createdAt) - daysSince(a.car.createdAt));
+  const prestadorAtrasado = dados.filter(x => x.p.atrasado).sort((a, b) => a.p.prazoPrestador - b.p.prazoPrestador);
+  const parados = dados.filter(x => x.p.parado).sort((a, b) => daysSince(b.car.createdAt) - daysSince(a.car.createdAt));
+  function abrir(car) {
+    onClose();
+    onSelectCar(car);
+  }
+  function PecaRow({
+    item,
+    instalar
+  }) {
+    const car = item.car;
+    const peca = item.peca;
+    return /*#__PURE__*/React.createElement("button", {
+      key: `${car.id}-${peca.id || peca.nome}-${instalar ? "instalar" : "comprar"}`,
+      onClick: () => abrir(car),
+      style: {
+        width: "100%",
+        background: C.card,
+        border: `1px solid ${(instalar ? C.info : C.warning)}44`,
+        borderRadius: 9,
+        padding: "10px 12px",
+        display: "flex",
+        justifyContent: "space-between",
+        alignItems: "center",
+        gap: 10,
+        color: C.text,
+        cursor: "pointer",
+        fontFamily: "inherit",
+        textAlign: "left"
+      }
+    }, /*#__PURE__*/React.createElement("div", {
+      style: {
+        minWidth: 0
+      }
+    }, /*#__PURE__*/React.createElement("div", {
+      style: {
+        fontWeight: 800,
+        fontSize: 13,
+        overflow: "hidden",
+        textOverflow: "ellipsis",
+        whiteSpace: "nowrap"
+      }
+    }, peca.nome || "Peça sem nome"), /*#__PURE__*/React.createElement("div", {
+      style: {
+        fontSize: 11,
+        color: C.textMuted,
+        marginTop: 2
+      }
+    }, tituloCarro(car), " · ", car.plate || "sem placa", " · ", car.loja || "sem loja", peca.fornecedor ? ` · ${peca.fornecedor}` : "")), /*#__PURE__*/React.createElement("div", {
+      style: {
+        display: "flex",
+        flexDirection: "column",
+        alignItems: "flex-end",
+        gap: 4,
+        flexShrink: 0
+      }
+    }, /*#__PURE__*/React.createElement(Badge, {
+      label: peca.status || "Pendente",
+      col: instalar ? C.info : C.warning
+    }), peca.urgencia && /*#__PURE__*/React.createElement("span", {
+      style: {
+        fontSize: 10,
+        color: URG_COL[peca.urgencia] || C.textMuted,
+        fontWeight: 800
+      }
+    }, peca.urgencia)));
+  }
+  function CarPendRow({
+    item,
+    tipo
+  }) {
+    const car = item.car;
+    const p = item.p;
+    const col = tipo === "atrasado" ? C.error : tipo === "docs" ? C.warning : tipo === "parado" ? C.error : C.info;
+    const saude = saudePreparacao(car);
+    const detalhes = tipo === "atrasado" ? `${car.prestadorAtual} · vencido há ${Math.abs(p.prazoPrestador)} dia(s)` : tipo === "docs" ? `${p.docsPend.length} doc(s) checklist · ${p.docsPdfPendentes.length} PDF(s)` : tipo === "parado" ? `${daysSince(car.createdAt)} dia(s) parado` : `${p.prep.pct}% pronto · ${p.prep.pendentes} item(ns) pendente(s)`;
+    const cats = p.prep.categorias.slice(0, 3).map(c => c.label).join(", ");
+    return /*#__PURE__*/React.createElement("button", {
+      key: `${tipo}-${car.id}`,
+      onClick: () => abrir(car),
+      style: {
+        width: "100%",
+        background: C.card,
+        border: `1px solid ${col}44`,
+        borderRadius: 9,
+        padding: "10px 12px",
+        color: C.text,
+        cursor: "pointer",
+        fontFamily: "inherit",
+        textAlign: "left"
+      }
+    }, /*#__PURE__*/React.createElement("div", {
+      style: {
+        display: "flex",
+        justifyContent: "space-between",
+        gap: 10,
+        alignItems: "flex-start"
+      }
+    }, /*#__PURE__*/React.createElement("div", {
+      style: {
+        minWidth: 0
+      }
+    }, /*#__PURE__*/React.createElement("div", {
+      style: {
+        fontWeight: 800,
+        fontSize: 13,
+        overflow: "hidden",
+        textOverflow: "ellipsis",
+        whiteSpace: "nowrap"
+      }
+    }, tituloCarro(car)), /*#__PURE__*/React.createElement("div", {
+      style: {
+        fontSize: 11,
+        color: C.textMuted,
+        marginTop: 2
+      }
+    }, car.plate || "sem placa", " · ", car.loja || "sem loja", cats ? ` · ${cats}` : "")), /*#__PURE__*/React.createElement("div", {
+      style: {
+        display: "flex",
+        flexDirection: "column",
+        alignItems: "flex-end",
+        gap: 5,
+        flexShrink: 0
+      }
+    }, /*#__PURE__*/React.createElement(Badge, {
+      label: `Saúde ${saude.score}`,
+      col: saude.col
+    }), /*#__PURE__*/React.createElement(Badge, {
+      label: detalhes,
+      col: col
+    }))));
+  }
+  function Section({
+    title,
+    count,
+    col,
+    children,
+    empty
+  }) {
+    return /*#__PURE__*/React.createElement("div", {
+      style: {
+        display: "flex",
+        flexDirection: "column",
+        gap: 7
+      }
+    }, /*#__PURE__*/React.createElement("div", {
+      style: {
+        display: "flex",
+        justifyContent: "space-between",
+        alignItems: "center",
+        gap: 8
+      }
+    }, /*#__PURE__*/React.createElement("div", {
+      style: {
+        color: col,
+        fontSize: 12,
+        fontWeight: 800,
+        letterSpacing: .5
+      }
+    }, title), /*#__PURE__*/React.createElement(Badge, {
+      label: String(count),
+      col: col
+    })), count === 0 ? /*#__PURE__*/React.createElement("div", {
+      style: {
+        background: C.bg,
+        border: `1px solid ${C.border}`,
+        borderRadius: 9,
+        padding: "10px 12px",
+        color: C.textMuted,
+        fontSize: 12
+      }
+    }, empty) : children);
+  }
+  const stats = [{
+    l: "Peças a comprar",
+    v: pecasComprar.length,
+    c: C.warning
+  }, {
+    l: "Compradas sem instalar",
+    v: pecasInstalar.length,
+    c: C.info
+  }, {
+    l: "Docs/PDF",
+    v: docsPendentes.length,
+    c: C.warning
+  }, {
+    l: "Prestador atrasado",
+    v: prestadorAtrasado.length,
+    c: prestadorAtrasado.length ? C.error : C.success
+  }];
+  return /*#__PURE__*/React.createElement(Modal, {
+    title: "\uD83D\uDCCC Centro de Pend\xEAncias",
+    onClose: onClose,
+    width: 860
+  }, /*#__PURE__*/React.createElement("div", {
+    style: {
+      display: "flex",
+      flexDirection: "column",
+      gap: 13
+    }
+  }, /*#__PURE__*/React.createElement("div", {
+    style: {
+      display: "grid",
+      gridTemplateColumns: "repeat(auto-fit,minmax(135px,1fr))",
+      gap: 8
+    }
+  }, stats.map(x => /*#__PURE__*/React.createElement("div", {
+    key: x.l,
+    style: {
+      background: C.bg,
+      border: `1px solid ${C.border}`,
+      borderRadius: 10,
+      padding: "10px 11px"
+    }
+  }, /*#__PURE__*/React.createElement("div", {
+    style: {
+      color: x.c,
+      fontSize: 22,
+      fontWeight: 900
+    }
+  }, x.v), /*#__PURE__*/React.createElement("div", {
+    style: {
+      color: C.textMuted,
+      fontSize: 10,
+      marginTop: 2
+    }
+  }, x.l)))), /*#__PURE__*/React.createElement("div", {
+    style: {
+      display: "grid",
+      gridTemplateColumns: "minmax(120px,190px) 1fr",
+      gap: 9,
+      alignItems: "end"
+    }
+  }, /*#__PURE__*/React.createElement(Sel, {
+    label: "Loja",
+    value: loja,
+    onChange: setLoja,
+    options: ["Todas", ...LOJAS],
+    small: true
+  }), /*#__PURE__*/React.createElement("div", {
+    style: {
+      color: C.textMuted,
+      fontSize: 11,
+      lineHeight: 1.45,
+      background: C.bg,
+      border: `1px solid ${C.border}`,
+      borderRadius: 9,
+      padding: "8px 10px"
+    }
+  }, "Lista somente carros ativos. Clique em qualquer linha para abrir a ficha e resolver a pend\xEAncia.")), /*#__PURE__*/React.createElement(Section, {
+    title: "PE\xC7AS A COMPRAR / OR\xC7AR",
+    count: pecasComprar.length,
+    col: C.warning,
+    empty: "Nenhuma pe\xE7a a comprar nesta loja."
+  }, pecasComprar.slice(0, 30).map(item => /*#__PURE__*/React.createElement(PecaRow, {
+    key: `${item.car.id}-${item.peca.id || item.peca.nome}-compra`,
+    item: item
+  }))), /*#__PURE__*/React.createElement(Section, {
+    title: "PE\xC7AS COMPRADAS E N\xC3O INSTALADAS",
+    count: pecasInstalar.length,
+    col: C.info,
+    empty: "Nenhuma pe\xE7a comprada aguardando instala\xE7\xE3o."
+  }, pecasInstalar.slice(0, 30).map(item => /*#__PURE__*/React.createElement(PecaRow, {
+    key: `${item.car.id}-${item.peca.id || item.peca.nome}-instala`,
+    item: item,
+    instalar: true
+  }))), /*#__PURE__*/React.createElement(Section, {
+    title: "PRESTADORES ATRASADOS",
+    count: prestadorAtrasado.length,
+    col: prestadorAtrasado.length ? C.error : C.success,
+    empty: "Nenhum carro com prazo de prestador vencido."
+  }, prestadorAtrasado.slice(0, 25).map(item => /*#__PURE__*/React.createElement(CarPendRow, {
+    key: `atr-${item.car.id}`,
+    item: item,
+    tipo: "atrasado"
+  }))), /*#__PURE__*/React.createElement(Section, {
+    title: "DOCUMENTOS / VISTORIA PENDENTES",
+    count: docsPendentes.length,
+    col: C.warning,
+    empty: "Nenhum carro com documento ou vistoria pendente."
+  }, docsPendentes.slice(0, 25).map(item => /*#__PURE__*/React.createElement(CarPendRow, {
+    key: `doc-${item.car.id}`,
+    item: item,
+    tipo: "docs"
+  }))), /*#__PURE__*/React.createElement(Section, {
+    title: "PREPARA\xC7\xC3O PENDENTE",
+    count: prepPendente.length,
+    col: C.info,
+    empty: "Nenhum carro ativo com prepara\xE7\xE3o pendente."
+  }, prepPendente.slice(0, 30).map(item => /*#__PURE__*/React.createElement(CarPendRow, {
+    key: `prep-${item.car.id}`,
+    item: item,
+    tipo: "prep"
+  }))), /*#__PURE__*/React.createElement(Section, {
+    title: "CARROS PARADOS H\xC1 MAIS DE 30 DIAS",
+    count: parados.length,
+    col: parados.length ? C.error : C.success,
+    empty: "Nenhum carro ativo acima de 30 dias parado."
+  }, parados.slice(0, 25).map(item => /*#__PURE__*/React.createElement(CarPendRow, {
+    key: `parado-${item.car.id}`,
+    item: item,
+    tipo: "parado"
+  })))));
 }
 
 // ═══ PLACA FIPE MODAL ═══════════════════════════════════════════
@@ -2565,10 +3921,18 @@ function PrestadorModal({
   const [items, setItems] = useState(PREST_ITEMS_DEFAULT.map(t => ({ label: t, ok: false, obs: "", foto: "" })));
   const [uploadingIdx, setUploadingIdx] = useState(null);
   const [newLabel, setNewLabel] = useState("");
+  const [saida, setSaida] = useState({
+    data: car.prestadorSaida || todayISO(),
+    km: car.prestadorKmSaida || car.km || "",
+    conclusao: "",
+    responsavel: car.prestadorResponsavelSaida || user.name || ""
+  });
   const allOk = items.every(it => it.ok);
+  const saidaOk = saida.data && saida.km && saida.conclusao.trim() && saida.responsavel.trim();
   function toggle(i) { setItems(p => p.map((it, j) => j === i ? { ...it, ok: !it.ok } : it)); }
   function setObs(i, v) { setItems(p => p.map((it, j) => j === i ? { ...it, obs: v } : it)); }
   function setFoto(i, v) { setItems(p => p.map((it, j) => j === i ? { ...it, foto: v } : it)); }
+  function setSaidaCampo(k, v) { setSaida(p => ({ ...p, [k]: v })); }
   function addItem() {
     if (!newLabel.trim()) return;
     setItems(p => [...p, { label: newLabel.trim(), ok: false, obs: "", foto: "", custom: true }]);
@@ -2594,6 +3958,52 @@ function PrestadorModal({
   }, "\u26A0\uFE0F Checklist de Sa\xEDda"), /*#__PURE__*/React.createElement("div", {
     style: { color: C.textMuted, fontSize: 12, marginBottom: 16 }
   }, "Confirme o estado do ve\xEDculo ao sair de ", /*#__PURE__*/React.createElement("b", { style: { color: C.text } }, car.prestadorAtual)),
+  /*#__PURE__*/React.createElement("div", {
+    style: {
+      background: C.bg,
+      border: `1px solid ${C.border}`,
+      borderRadius: 10,
+      padding: 12,
+      marginBottom: 12
+    }
+  }, /*#__PURE__*/React.createElement("div", {
+    style: {
+      color: C.red,
+      fontWeight: 800,
+      fontSize: 11,
+      marginBottom: 10
+    }
+  }, "DADOS DA SAÍDA"), /*#__PURE__*/React.createElement("div", {
+    style: {
+      display: "grid",
+      gridTemplateColumns: "repeat(auto-fit,minmax(140px,1fr))",
+      gap: 9,
+      marginBottom: 9
+    }
+  }, /*#__PURE__*/React.createElement(Inp, {
+    label: "Data de saída *",
+    value: saida.data,
+    onChange: v => setSaidaCampo("data", v),
+    type: "date",
+    small: true
+  }), /*#__PURE__*/React.createElement(Inp, {
+    label: "KM de saída *",
+    value: saida.km,
+    onChange: v => setSaidaCampo("km", v),
+    type: "number",
+    small: true
+  }), /*#__PURE__*/React.createElement(Inp, {
+    label: "Responsável retirada *",
+    value: saida.responsavel,
+    onChange: v => setSaidaCampo("responsavel", v),
+    small: true
+  })), /*#__PURE__*/React.createElement(Txta, {
+    label: "O que foi feito / conclusão *",
+    value: saida.conclusao,
+    onChange: v => setSaidaCampo("conclusao", v),
+    rows: 2,
+    placeholder: "Ex: revisão concluída, item parcial, serviço não realizado..."
+  })),
   items.map((item, i) => /*#__PURE__*/React.createElement("div", {
     key: i,
     style: { background: item.ok ? C.success + "12" : C.bg, border: `1px solid ${item.ok ? C.success : C.border}`, borderRadius: 10, marginBottom: 8, overflow: "hidden" }
@@ -2639,8 +4049,12 @@ function PrestadorModal({
     onClick: onClose, variant: "ghost", style: { flex: 1, justifyContent: "center" }
   }, "Cancelar"), /*#__PURE__*/React.createElement(Btn, {
     onClick: () => {
+      if (!saidaOk) {
+        pushNotif("Preencha data, KM, conclusão e responsável da saída.", "warning");
+        return;
+      }
       if (!allOk && !window.confirm("Nem todos os itens foram marcados. Continuar mesmo assim?")) return;
-      onConfirm(items);
+      onConfirm({ items, saida });
     },
     variant: "success", style: { flex: 2, justifyContent: "center" }
   }, "\u2705 Confirmar e Liberar"))));
@@ -2783,8 +4197,8 @@ function OverviewTab({
   user,
   onOpenTag
 }) {
-  const cp = Object.entries(CATS).map(([k, v]) => {
-    const d = car[k];
+  const cp = Object.entries(getPreparationCats(car)).map(([k, v]) => {
+    const d = prepDataForCar(car, k, v);
     const done = d ? d.items.filter(i => i.status === "concluído").length : 0;
     const inProg = d ? d.items.filter(i => i.status === "em andamento").length : 0;
     const total = d ? d.items.length : 0;
@@ -2802,6 +4216,9 @@ function OverviewTab({
     "Leilão": "#B45309",
     "Consignado": "#7C3AED"
   };
+  const saude = saudePreparacao(car);
+  const custoParado = custoPorDiaParado(car);
+  const mostrarCustoParado = CAN.seeCusto(user.role) && car.status !== "Vendido" && custoParado.base > 0;
   return /*#__PURE__*/React.createElement("div", {
     style: {
       display: "flex",
@@ -2809,6 +4226,77 @@ function OverviewTab({
       gap: 14
     }
   }, /*#__PURE__*/React.createElement("div", {
+    style: {
+      display: "grid",
+      gridTemplateColumns: "repeat(auto-fit,minmax(150px,1fr))",
+      gap: 9
+    }
+  }, [{
+    l: "Saúde",
+    v: `${saude.score}`,
+    s: saude.label,
+    c: saude.col
+  }, {
+    l: "Dias em estoque",
+    v: String(custoParado.dias),
+    s: custoParado.dias > 30 ? "Atenção" : "OK",
+    c: custoParado.dias > 30 ? C.warning : C.success
+  }, ...(mostrarCustoParado ? [{
+    l: "Custo diário",
+    v: fmt(custoParado.diario),
+    s: "1,5% ao mês",
+    c: C.warning
+  }, {
+    l: "Custo parado",
+    v: fmt(custoParado.total),
+    s: `${custoParado.dias} dia(s)`,
+    c: custoParado.total > 0 ? C.error : C.success
+  }] : [])].map(x => /*#__PURE__*/React.createElement("div", {
+    key: x.l,
+    style: {
+      background: C.card,
+      border: `1px solid ${x.c}44`,
+      borderRadius: 10,
+      padding: "11px 12px"
+    }
+  }, /*#__PURE__*/React.createElement("div", {
+    style: {
+      fontSize: 10,
+      color: C.textMuted,
+      textTransform: "uppercase",
+      fontWeight: 800,
+      letterSpacing: .5,
+      marginBottom: 3
+    }
+  }, x.l), /*#__PURE__*/React.createElement("div", {
+    style: {
+      fontSize: x.v.indexOf("R$") === 0 ? 14 : 25,
+      fontWeight: 900,
+      color: x.c,
+      lineHeight: 1.1,
+      overflow: "hidden",
+      textOverflow: "ellipsis",
+      whiteSpace: "nowrap"
+    }
+  }, x.v), /*#__PURE__*/React.createElement("div", {
+    style: {
+      fontSize: 10,
+      color: C.textMuted,
+      marginTop: 4
+    }
+  }, x.s))), saude.motivos.length > 0 && /*#__PURE__*/React.createElement("div", {
+    style: {
+      gridColumn: "1 / -1",
+      background: saude.col + "12",
+      border: `1px solid ${saude.col}33`,
+      borderRadius: 9,
+      padding: "8px 10px",
+      color: saude.col,
+      fontSize: 11,
+      fontWeight: 700,
+      lineHeight: 1.4
+    }
+  }, "Pontos de atenção: ", saude.motivos.join(" · "))), /*#__PURE__*/React.createElement("div", {
     style: {
       background: C.card,
       border: `1px solid ${C.border}`,
@@ -2866,21 +4354,6 @@ function OverviewTab({
     value: car.loja || "Premier Multimarcas",
     onChange: v => onUpdate("loja", v),
     options: LOJAS
-  }), /*#__PURE__*/React.createElement(Sel, {
-    label: "Prestador Atual",
-    value: car.prestadorAtual || "",
-    onChange: v => onUpdate("prestadorAtual", v),
-    options: PRESTADORES
-  }), car.prestadorAtual && car.prestadorAtual !== "Sem prestador" && /*#__PURE__*/React.createElement(Inp, {
-    label: "Entrada no prestador",
-    value: car.prestadorEntrada || "",
-    onChange: v => onUpdate("prestadorEntrada", v),
-    type: "date"
-  }), car.prestadorAtual && car.prestadorAtual !== "Sem prestador" && /*#__PURE__*/React.createElement(Inp, {
-    label: "Prazo combinado",
-    value: car.prestadorPrazo || "",
-    onChange: v => onUpdate("prestadorPrazo", v),
-    type: "date"
   }), /*#__PURE__*/React.createElement(Sel, {
     label: "Combust\xEDvel",
     value: car.combustivel || "",
@@ -3109,6 +4582,290 @@ function OverviewTab({
   }, "\u25CB ", c.total - c.done - c.inProg)))))));
 }
 
+// ═══ PRESTADOR TAB ══════════════════════════════════════════════
+function PrestadorTab({
+  car,
+  onUpdate,
+  user,
+  prestadores = [],
+  onOpenChecklist
+}) {
+  const emPrestador = car.prestadorAtual && car.prestadorAtual !== "Sem prestador";
+  const prestadorOptions = buildPrestadorOptions(prestadores, car.prestadorAtual);
+  const categoriasOptions = prestadorCategoriasOptions(prestadores, car.prestadorCategoriaServico);
+  const prestadorCadastrado = !emPrestador || (prestadores || []).some(p => p && p.nome === car.prestadorAtual);
+  const prestadorDias = emPrestador && car.prestadorPrazo ? daysUntil(car.prestadorPrazo) : null;
+  const prazoColor = prestadorDias === null ? C.textMuted : prestadorDias < 0 ? C.error : prestadorDias <= 1 ? C.warning : C.success;
+  const kmEntrada = Number(car.prestadorKmEntrada || 0);
+  const kmSaida = Number(car.prestadorKmSaida || 0);
+  const kmRodado = kmEntrada > 0 && kmSaida > 0 ? Math.max(0, kmSaida - kmEntrada) : null;
+  const historico = car.prestadorHistorico || [];
+  const resumo = [{
+    l: "Prestador atual",
+    v: emPrestador ? car.prestadorAtual : "Na loja",
+    c: emPrestador ? C.warning : C.success
+  }, {
+    l: "Prazo",
+    v: prestadorDias === null ? "Sem prazo" : prestadorDias < 0 ? `${Math.abs(prestadorDias)}d atrasado` : prestadorDias === 0 ? "Hoje" : `${prestadorDias}d`,
+    c: prazoColor
+  }, {
+    l: "KM rodado",
+    v: kmRodado === null ? "—" : `${kmRodado} km`,
+    c: kmRodado !== null && kmRodado > 20 ? C.warning : C.info
+  }];
+  return /*#__PURE__*/React.createElement("div", {
+    style: {
+      display: "flex",
+      flexDirection: "column",
+      gap: 12
+    }
+  }, /*#__PURE__*/React.createElement("div", {
+    style: {
+      display: "grid",
+      gridTemplateColumns: "repeat(auto-fit,minmax(150px,1fr))",
+      gap: 9
+    }
+  }, resumo.map(x => /*#__PURE__*/React.createElement("div", {
+    key: x.l,
+    style: {
+      background: C.card,
+      border: `1px solid ${x.c}44`,
+      borderRadius: 10,
+      padding: "11px 12px"
+    }
+  }, /*#__PURE__*/React.createElement("div", {
+    style: {
+      fontSize: 10,
+      color: C.textMuted,
+      textTransform: "uppercase",
+      fontWeight: 800,
+      letterSpacing: .5,
+      marginBottom: 3
+    }
+  }, x.l), /*#__PURE__*/React.createElement("div", {
+    style: {
+      fontSize: 18,
+      fontWeight: 900,
+      color: x.c,
+      lineHeight: 1.15,
+      overflow: "hidden",
+      textOverflow: "ellipsis",
+      whiteSpace: "nowrap"
+    }
+  }, x.v)))), !prestadorCadastrado && /*#__PURE__*/React.createElement("div", {
+    style: {
+      background: C.warning + "12",
+      border: `1px solid ${C.warning}44`,
+      borderRadius: 9,
+      color: C.warning,
+      padding: "9px 11px",
+      fontSize: 11,
+      fontWeight: 700,
+      lineHeight: 1.4
+    }
+  }, "Prestador atual antigo: ", car.prestadorAtual, ". Cadastre a empresa real em Cadastro de Prestadores e selecione aqui."), prestadorOptions.length <= 1 && /*#__PURE__*/React.createElement("div", {
+    style: {
+      background: C.info + "12",
+      border: `1px solid ${C.info}44`,
+      borderRadius: 9,
+      color: C.info,
+      padding: "9px 11px",
+      fontSize: 11,
+      fontWeight: 700,
+      lineHeight: 1.4
+    }
+  }, "Nenhum prestador cadastrado ainda. Cadastre a empresa em Cadastro de Prestadores para poder enviar o carro sem misturar com fornecedores."), /*#__PURE__*/React.createElement("div", {
+    style: {
+      background: C.card,
+      border: `1px solid ${C.border}`,
+      borderRadius: 12,
+      padding: 16
+    }
+  }, /*#__PURE__*/React.createElement("div", {
+    style: {
+      color: C.red,
+      fontWeight: 800,
+      fontSize: 11,
+      marginBottom: 12,
+      letterSpacing: 1
+    }
+  }, "FICHA DO PRESTADOR"), /*#__PURE__*/React.createElement("div", {
+    style: {
+      display: "grid",
+      gridTemplateColumns: "repeat(auto-fit,minmax(150px,1fr))",
+      gap: 10
+    }
+  }, /*#__PURE__*/React.createElement(Sel, {
+    label: "Prestador",
+    value: car.prestadorAtual || "",
+    onChange: v => onUpdate("prestadorAtual", v),
+    options: prestadorOptions
+  }), /*#__PURE__*/React.createElement(Sel, {
+    label: "Categoria do serviço",
+    value: car.prestadorCategoriaServico || "",
+    onChange: v => onUpdate("prestadorCategoriaServico", v),
+    options: ["", ...categoriasOptions]
+  }), /*#__PURE__*/React.createElement(Inp, {
+    label: "Entrada",
+    value: car.prestadorEntrada || "",
+    onChange: v => onUpdate("prestadorEntrada", v),
+    type: "date"
+  }), /*#__PURE__*/React.createElement(Inp, {
+    label: "Prazo combinado",
+    value: car.prestadorPrazo || "",
+    onChange: v => onUpdate("prestadorPrazo", v),
+    type: "date"
+  }), /*#__PURE__*/React.createElement(Inp, {
+    label: "KM entrada",
+    value: car.prestadorKmEntrada || "",
+    onChange: v => onUpdate("prestadorKmEntrada", v),
+    type: "number"
+  }), /*#__PURE__*/React.createElement(Inp, {
+    label: "Responsável envio",
+    value: car.prestadorResponsavel || "",
+    onChange: v => onUpdate("prestadorResponsavel", v)
+  }), /*#__PURE__*/React.createElement(Inp, {
+    label: "Saída",
+    value: car.prestadorSaida || "",
+    onChange: v => onUpdate("prestadorSaida", v),
+    type: "date"
+  }), /*#__PURE__*/React.createElement(Inp, {
+    label: "KM saída",
+    value: car.prestadorKmSaida || "",
+    onChange: v => onUpdate("prestadorKmSaida", v),
+    type: "number"
+  }), /*#__PURE__*/React.createElement(Inp, {
+    label: "Responsável retirada",
+    value: car.prestadorResponsavelSaida || "",
+    onChange: v => onUpdate("prestadorResponsavelSaida", v)
+  })), /*#__PURE__*/React.createElement("div", {
+    style: {
+      marginTop: 10
+    }
+  }, /*#__PURE__*/React.createElement(Txta, {
+    label: "Serviço a executar",
+    value: car.prestadorServico || "",
+    onChange: v => onUpdate("prestadorServico", v),
+    rows: 2,
+    placeholder: "Ex: revisão, funilaria lateral, higienização..."
+  })), /*#__PURE__*/React.createElement("div", {
+    style: {
+      marginTop: 10
+    }
+  }, /*#__PURE__*/React.createElement(Txta, {
+    label: "Itens ligados ao prestador",
+    value: car.prestadorItens || "",
+    onChange: v => onUpdate("prestadorItens", v),
+    rows: 3,
+    placeholder: "Peças, avarias, fotos necessárias, observações ou itens que acompanham esse serviço..."
+  })), /*#__PURE__*/React.createElement("div", {
+    style: {
+      display: "flex",
+      gap: 8,
+      flexWrap: "wrap",
+      marginTop: 12
+    }
+  }, emPrestador && /*#__PURE__*/React.createElement(Btn, {
+    onClick: onOpenChecklist,
+    variant: "warning",
+    small: true
+  }, "📋 Checklist de saída"), emPrestador && /*#__PURE__*/React.createElement(Btn, {
+    onClick: () => {
+      onUpdate("prestadorSaida", todayISO());
+      onUpdate("prestadorKmSaida", car.prestadorKmSaida || car.km || car.prestadorKmEntrada || "");
+      onUpdate("prestadorResponsavelSaida", car.prestadorResponsavelSaida || user.name || "");
+    },
+    variant: "ghost",
+    small: true
+  }, "Preencher saída de hoje")), /*#__PURE__*/React.createElement("div", {
+    style: {
+      marginTop: 10,
+      fontSize: 11,
+      color: C.textMuted,
+      lineHeight: 1.4
+    }
+  }, "Para trocar de prestador, primeiro confirme o checklist de saída do prestador atual. Depois selecione o próximo prestador nesta ficha.")), /*#__PURE__*/React.createElement("div", {
+    style: {
+      background: C.card,
+      border: `1px solid ${C.border}`,
+      borderRadius: 12,
+      padding: 16
+    }
+  }, /*#__PURE__*/React.createElement("div", {
+    style: {
+      color: C.red,
+      fontWeight: 800,
+      fontSize: 11,
+      marginBottom: 12,
+      letterSpacing: 1
+    }
+  }, "HISTÓRICO DO PRESTADOR"), historico.length === 0 ? /*#__PURE__*/React.createElement("div", {
+    style: {
+      color: C.textDim,
+      fontSize: 12,
+      textAlign: "center",
+      padding: "16px 0"
+    }
+  }, "As próximas saídas confirmadas vão aparecer aqui com checklist, KM e responsável.") : /*#__PURE__*/React.createElement("div", {
+    style: {
+      display: "flex",
+      flexDirection: "column",
+      gap: 8
+    }
+  }, historico.slice().reverse().map(h => /*#__PURE__*/React.createElement("div", {
+    key: h.id,
+    style: {
+      background: C.bg,
+      border: `1px solid ${C.border}`,
+      borderRadius: 10,
+      padding: "10px 12px"
+    }
+  }, /*#__PURE__*/React.createElement("div", {
+    style: {
+      display: "flex",
+      justifyContent: "space-between",
+      gap: 8,
+      flexWrap: "wrap",
+      marginBottom: 4
+    }
+  }, /*#__PURE__*/React.createElement("b", {
+    style: {
+      color: C.text,
+      fontSize: 13
+    }
+  }, h.prestador || "Prestador"), /*#__PURE__*/React.createElement("span", {
+    style: {
+      color: C.textMuted,
+      fontSize: 11
+    }
+  }, h.saida || h.em || "")), /*#__PURE__*/React.createElement("div", {
+    style: {
+      color: C.textMuted,
+      fontSize: 11,
+      lineHeight: 1.45
+    }
+  }, "Entrada: ", h.entrada || "—", " · Saída: ", h.saida || "—", " · KM: ", h.kmEntrada || "—", " → ", h.kmSaida || "—", h.categoria ? ` · ${h.categoria}` : ""), h.servico && /*#__PURE__*/React.createElement("div", {
+    style: {
+      color: C.text,
+      fontSize: 12,
+      marginTop: 6
+    }
+  }, h.servico), h.itens && /*#__PURE__*/React.createElement("div", {
+    style: {
+      color: C.textMuted,
+      fontSize: 11,
+      marginTop: 4,
+      whiteSpace: "pre-wrap"
+    }
+  }, h.itens), /*#__PURE__*/React.createElement("div", {
+    style: {
+      color: C.textDim,
+      fontSize: 10,
+      marginTop: 6
+    }
+  }, "Responsável: ", h.responsavelSaida || h.concluidoPor || "—", " · Checklist: ", (h.checklist || []).filter(i => i.ok).length, "/", (h.checklist || []).length))))));
+}
+
 function ChecklistTab({
   catKey,
   data,
@@ -3117,7 +4874,7 @@ function ChecklistTab({
   user
 }) {
   const [newItem, setNewItem] = useState("");
-  const cat = CATS[catKey];
+  const cat = prepCatInfo(catKey);
   if (!cat || !data) return null;
   const done = data.items.filter(i => i.status === "concluído").length;
   const pct = data.items.length > 0 ? Math.round(done / data.items.length * 100) : 0;
@@ -4312,6 +6069,8 @@ function FinancialTab({
   const marg = pv > 0 ? (lucro / pv * 100).toFixed(1) : null;
   const dif = fipe > 0 ? pv - fipe : null;
   const seeCusto = CAN.seeCusto(user.role);
+  const custoParado = custoPorDiaParado(car);
+  const mostrarCustoParado = seeCusto && car.status !== "Vendido" && custoParado.base > 0;
   function addDesp() {
     if (!nd.trim() || !nv) return;
     const upd = [...(car.despesas || []).filter(d => !d._peca), {
@@ -4466,7 +6225,38 @@ function FinancialTab({
       fontWeight: 800,
       color: "#F97316"
     }
-  }, fmt(vp + lt + desp))), /*#__PURE__*/React.createElement("div", {
+  }, fmt(vp + lt + desp))), mostrarCustoParado && /*#__PURE__*/React.createElement("div", {
+    style: {
+      background: C.card,
+      border: `1px solid ${C.error}44`,
+      borderRadius: 11,
+      padding: 12
+    }
+  }, /*#__PURE__*/React.createElement("div", {
+    style: {
+      fontSize: 16
+    }
+  }, "\u23F1"), /*#__PURE__*/React.createElement("div", {
+    style: {
+      fontSize: 9,
+      color: C.textMuted,
+      marginBottom: 2,
+      textTransform: "uppercase",
+      letterSpacing: .5
+    }
+  }, "Custo Parado"), /*#__PURE__*/React.createElement("div", {
+    style: {
+      fontSize: 14,
+      fontWeight: 800,
+      color: C.error
+    }
+  }, fmt(custoParado.total)), /*#__PURE__*/React.createElement("div", {
+    style: {
+      fontSize: 9,
+      color: C.textMuted,
+      marginTop: 3
+    }
+  }, fmt(custoParado.diario), "/dia")), /*#__PURE__*/React.createElement("div", {
     style: {
       background: C.card,
       border: `1px solid ${C.border}`,
@@ -4933,8 +6723,9 @@ function ApprovalTab({
 }) {
   let total = 0,
     done = 0;
-  Object.keys(CATS).forEach(k => {
-    if (car[k] && car[k].items) car[k].items.forEach(i => {
+  Object.entries(getPreparationCats(car)).forEach(([k, v]) => {
+    const d = prepDataForCar(car, k, v);
+    if (d && d.items) d.items.forEach(i => {
       total++;
       if (i.status === "concluído") done++;
     });
@@ -5046,11 +6837,12 @@ function CarDetail({
   car: init,
   user,
   suppliers,
+  prestadores,
   onBack,
   onSave,
   onDelete
 }) {
-  const [car, setCar] = useState(init);
+  const [car, setCar] = useState(() => ensureCarPreparationCategories(init));
   const [tab, setTab] = useState("overview");
   const [showCats, setShowCats] = useState(false);
   const [showPrest, setShowPrest] = useState(false);
@@ -5059,6 +6851,9 @@ function CarDetail({
   const [showTag, setShowTag] = useState(false);
   const [saved, setSaved] = useState(false);
   const saveTimer = useRef(null);
+  useEffect(() => {
+    setCar(ensureCarPreparationCategories(init));
+  }, [init.id]);
   function addHist(updated, acao) {
     return {
       ...updated,
@@ -5088,11 +6883,24 @@ function CarDetail({
         n = addHist(n, `Status: ${v}`);
         pushNotif(`📋 ${v}`);
       }
+      if (k === "prestadorAtual" && p.prestadorAtual && p.prestadorAtual !== "Sem prestador" && v && v !== "Sem prestador" && v !== p.prestadorAtual) {
+        pushNotif("Faça o checklist de saída antes de trocar de prestador.", "warning");
+        setShowPrest(true);
+        return p;
+      }
       if (k === "prestadorAtual" && v && v !== "Sem prestador") {
         n = {
           ...n,
           prestadorEntrada: p.prestadorAtual === v && p.prestadorEntrada ? p.prestadorEntrada : todayISO(),
-          prestadorPrazo: p.prestadorAtual === v ? p.prestadorPrazo || "" : ""
+          prestadorPrazo: p.prestadorAtual === v ? p.prestadorPrazo || "" : "",
+          prestadorServico: p.prestadorAtual === v ? p.prestadorServico || "" : "",
+          prestadorCategoriaServico: p.prestadorAtual === v ? p.prestadorCategoriaServico || "" : "",
+          prestadorKmEntrada: p.prestadorAtual === v ? p.prestadorKmEntrada || "" : p.km || "",
+          prestadorSaida: p.prestadorAtual === v ? p.prestadorSaida || "" : "",
+          prestadorKmSaida: p.prestadorAtual === v ? p.prestadorKmSaida || "" : "",
+          prestadorResponsavel: p.prestadorAtual === v ? p.prestadorResponsavel || user.name : user.name,
+          prestadorResponsavelSaida: p.prestadorAtual === v ? p.prestadorResponsavelSaida || "" : "",
+          prestadorItens: p.prestadorAtual === v ? p.prestadorItens || "" : ""
         };
         n = addHist(n, `Enviado para: ${v}`);
         pushNotif(`🔧 Enviado para ${v}`, "warning");
@@ -5101,7 +6909,15 @@ function CarDetail({
         n = {
           ...n,
           prestadorEntrada: "",
-          prestadorPrazo: ""
+          prestadorPrazo: "",
+          prestadorServico: "",
+          prestadorCategoriaServico: "",
+          prestadorKmEntrada: "",
+          prestadorSaida: "",
+          prestadorKmSaida: "",
+          prestadorResponsavel: "",
+          prestadorResponsavelSaida: "",
+          prestadorItens: ""
         };
       }
       autoSave(n);
@@ -5200,13 +7016,19 @@ function CarDetail({
   }
   const days = daysSince(car.createdAt);
   const dc = car.status === "Vendido" ? C.textDim : dayColor(days);
-  const isCatTab = Object.keys(CATS).includes(tab);
+  const catMap = getPreparationCats(car);
+  const isCatTab = Object.keys(catMap).includes(tab);
   const activeNav = isCatTab ? "prep" : tab;
   const prestadorDias = car.prestadorAtual && car.prestadorAtual !== "Sem prestador" && car.prestadorPrazo ? daysUntil(car.prestadorPrazo) : null;
+  const fornecedoresPecas = fornecedoresDePecas(suppliers || []);
   const navItems = [{
     k: "overview",
     icon: "📋",
     label: "Geral"
+  }, {
+    k: "prestador",
+    icon: "🚗",
+    label: "Prestador"
   }, {
     k: "prep",
     icon: "🔧",
@@ -5387,13 +7209,13 @@ function CarDetail({
       flex: 1,
       justifyContent: "center"
     }
-  }, "\uD83E\uDD1D Registrar Venda")), isCatTab && CATS[tab] && /*#__PURE__*/React.createElement("div", {
+  }, "\uD83E\uDD1D Registrar Venda")), isCatTab && catMap[tab] && /*#__PURE__*/React.createElement("div", {
     onClick: () => setShowCats(true),
     style: {
       marginTop: 8,
       padding: "6px 11px",
-      background: CATS[tab].col + "18",
-      border: `1px solid ${CATS[tab].col}44`,
+      background: catMap[tab].col + "18",
+      border: `1px solid ${catMap[tab].col}44`,
       borderRadius: 7,
       display: "flex",
       alignItems: "center",
@@ -5404,14 +7226,14 @@ function CarDetail({
     style: {
       fontSize: 13
     }
-  }, CATS[tab].icon), /*#__PURE__*/React.createElement("span", {
+  }, catMap[tab].icon), /*#__PURE__*/React.createElement("span", {
     style: {
       fontSize: 12,
-      color: CATS[tab].col,
+      color: catMap[tab].col,
       fontWeight: 700,
       flex: 1
     }
-  }, CATS[tab].label), /*#__PURE__*/React.createElement("span", {
+  }, catMap[tab].label), /*#__PURE__*/React.createElement("span", {
     style: {
       fontSize: 10,
       color: C.textMuted
@@ -5430,15 +7252,21 @@ function CarDetail({
     onUpdate: up,
     user: user,
     onOpenTag: () => setShowTag(true)
+  }), tab === "prestador" && /*#__PURE__*/React.createElement(PrestadorTab, {
+    car: car,
+    onUpdate: up,
+    user: user,
+    prestadores: prestadores || [],
+    onOpenChecklist: () => setShowPrest(true)
   }), isCatTab && car[tab] && /*#__PURE__*/React.createElement(ChecklistTab, {
     catKey: tab,
     data: car[tab],
-    suppliers: suppliers || [],
+    suppliers: fornecedoresPecas,
     onChange: d => upCat(tab, d),
     user: user
   }), tab === "pecas" && /*#__PURE__*/React.createElement(PecasTab, {
     car: car,
-    suppliers: suppliers || [],
+    suppliers: fornecedoresPecas,
     user: user,
     onChange: upField
   }), tab === "documentos" && /*#__PURE__*/React.createElement(DocumentosTab, {
@@ -5452,7 +7280,7 @@ function CarDetail({
   }), tab === "financeiro" && CAN.financial(user.role) && /*#__PURE__*/React.createElement(FinancialTab, {
     car: car,
     user: user,
-    suppliers: suppliers || [],
+    suppliers: fornecedoresPecas,
     onChange: upField,
     onMarkSold: markSold,
     onOpenFipe: () => setShowFipe(true),
@@ -5500,7 +7328,7 @@ function CarDetail({
       gridTemplateColumns: "1fr 1fr",
       gap: 7
     }
-  }, Object.entries(CATS).map(([k, v]) => {
+  }, Object.entries(catMap).map(([k, v]) => {
     const d = car[k];
     const done = d ? d.items.filter(i => i.status === "concluído").length : 0;
     const total = d ? d.items.length : 0;
@@ -5548,13 +7376,42 @@ function CarDetail({
   })))), showPrest && /*#__PURE__*/React.createElement(PrestadorModal, {
     car: car,
     user: user,
-    onConfirm: () => {
+    onConfirm: payload => {
       setCar(p => {
+        const saida = payload && payload.saida ? payload.saida : {};
+        const checklist = payload && payload.items ? payload.items : [];
+        const prestadorRegistro = {
+          id: uid(),
+          prestador: p.prestadorAtual,
+          categoria: p.prestadorCategoriaServico || "",
+          entrada: p.prestadorEntrada || "",
+          saida: saida.data || p.prestadorSaida || todayISO(),
+          prazo: p.prestadorPrazo || "",
+          servico: saida.conclusao || p.prestadorServico || "",
+          servicoSolicitado: p.prestadorServico || "",
+          itens: p.prestadorItens || "",
+          kmEntrada: p.prestadorKmEntrada || "",
+          kmSaida: saida.km || p.prestadorKmSaida || "",
+          responsavelEnvio: p.prestadorResponsavel || "",
+          responsavelSaida: saida.responsavel || p.prestadorResponsavelSaida || user.name,
+          checklist,
+          concluidoPor: user.name,
+          em: nowStr()
+        };
         const n = addHist({
           ...p,
+          prestadorHistorico: [...(p.prestadorHistorico || []), prestadorRegistro],
           prestadorAtual: "",
           prestadorEntrada: "",
-          prestadorPrazo: ""
+          prestadorPrazo: "",
+          prestadorServico: "",
+          prestadorCategoriaServico: "",
+          prestadorKmEntrada: "",
+          prestadorSaida: "",
+          prestadorKmSaida: "",
+          prestadorResponsavel: "",
+          prestadorResponsavelSaida: "",
+          prestadorItens: ""
         }, "Saída confirmada de " + p.prestadorAtual + " por " + user.name);
         onSave(n);
         return n;
@@ -5595,8 +7452,9 @@ function CarCard({
 }) {
   let total = 0,
     done = 0;
-  Object.keys(CATS).forEach(k => {
-    if (car[k] && car[k].items) car[k].items.forEach(i => {
+  Object.entries(getPreparationCats(car)).forEach(([k, v]) => {
+    const d = prepDataForCar(car, k, v);
+    if (d && d.items) d.items.forEach(i => {
       total++;
       if (i.status === "concluído") done++;
     });
@@ -5614,6 +7472,9 @@ function CarCard({
   const prestadorDias = car.prestadorAtual && car.prestadorAtual !== "Sem prestador" && car.prestadorPrazo ? daysUntil(car.prestadorPrazo) : null;
   const prestadorCol = prestadorDias === null ? C.warning : prestadorDias < 0 ? C.error : prestadorDias <= 1 ? C.warning : C.success;
   const prestadorAtrasado = prestadorDias !== null && prestadorDias < 0;
+  const saude = saudePreparacao(car);
+  const custoParado = custoPorDiaParado(car);
+  const mostrarCustoParado = CAN.seeCusto(user.role) && car.status !== "Vendido" && custoParado.base > 0 && custoParado.dias > 15;
   const stCol = ST_COL[car.status] || C.border;
   const foto = car.fotos && car.fotos.length > 0 ? car.fotos[0].url : null;
   const temFoto = !!foto;
@@ -5818,7 +7679,25 @@ function CarCard({
       fontSize: 9,
       fontWeight: 700
     }
-  }, "FIPE ", fipePct > 0 ? "+" : "", fipePct, "%"), garantiaDias !== null && /*#__PURE__*/React.createElement("span", {
+  }, "FIPE ", fipePct > 0 ? "+" : "", fipePct, "%"), /*#__PURE__*/React.createElement("span", {
+    style: {
+      background: saude.col + "20",
+      color: saude.col,
+      borderRadius: 8,
+      padding: "1px 7px",
+      fontSize: 9,
+      fontWeight: 700
+    }
+  }, "Saúde ", saude.score), mostrarCustoParado && /*#__PURE__*/React.createElement("span", {
+    style: {
+      background: C.error + "20",
+      color: C.error,
+      borderRadius: 8,
+      padding: "1px 7px",
+      fontSize: 9,
+      fontWeight: 700
+    }
+  }, "Custo ", fmt(custoParado.total)), garantiaDias !== null && /*#__PURE__*/React.createElement("span", {
     style: {
       background: garantiaCol + "20",
       color: garantiaCol,
@@ -6808,6 +8687,9 @@ function Dashboard({
   onOpenNotifs,
   onOpenPesquisaPlaca,
   onOpenLogistica,
+  onOpenPrestadores,
+  onOpenPendencias,
+  onOpenPrepCategorias,
   onRefresh,
   logCount
 }) {
@@ -6847,10 +8729,22 @@ function Dashboard({
     icon: "🔧"
   }];
   const menuItems = [{
+    icon: "📌",
+    label: "Centro de Pendências",
+    fn: onOpenPendencias
+  }, {
     icon: "🔧",
     label: "Logística / Prestadores",
     fn: onOpenLogistica
+  }, ...(CAN.suppliers(user.role) ? [{
+    icon: "🏭",
+    label: "Cadastro de Prestadores",
+    fn: onOpenPrestadores
   }, {
+    icon: "🧩",
+    label: "Editar Preparação",
+    fn: onOpenPrepCategorias
+  }] : []), {
     icon: "🔎",
     label: "Pesquisar placa (API)",
     fn: onOpenPesquisaPlaca
@@ -6864,7 +8758,7 @@ function Dashboard({
     fn: onOpenChangePass
   }, ...(CAN.suppliers(user.role) ? [{
     icon: "🏢",
-    label: "Fornecedores",
+    label: "Fornecedores de Peças",
     fn: onOpenSuppliers
   }] : []), ...(CAN.financial(user.role) ? [{
     icon: "📊",
@@ -7237,12 +9131,15 @@ function App() {
   const [users, setUsers] = useState(DEFAULT_USERS);
   const [cars, setCars] = useState([]);
   const [suppliers, setSuppliers] = useState([]);
+  const [prestadores, setPrestadores] = useState([]);
+  const [prepCategorias, setPrepCategorias] = useState(() => applyPrepCategoriasConfig(prepCategoriasDefaultList()));
   const [despesasFixas, setDespesasFixas] = useState([]);
   const [logs, setLogs] = useState([]);
   const [view, setView] = useState("dashboard");
   const [selectedCar, setSelectedCar] = useState(null);
   const [darkMode, setDarkMode] = useState(true);
   const [showSuppliers, setShowSuppliers] = useState(false);
+  const [showPrestadores, setShowPrestadores] = useState(false);
   const [showUsers, setShowUsers] = useState(false);
   const [showChangePass, setShowChangePass] = useState(false);
   const [showRelatorio, setShowRelatorio] = useState(false);
@@ -7250,7 +9147,10 @@ function App() {
   const [showNotifs, setShowNotifs] = useState(false);
   const [showPesquisaPlaca, setShowPesquisaPlaca] = useState(false);
   const [showLogistica, setShowLogistica] = useState(false);
+  const [showPendencias, setShowPendencias] = useState(false);
+  const [showPrepCategorias, setShowPrepCategorias] = useState(false);
   const [deepLinkDone, setDeepLinkDone] = useState(false);
+  applyPrepCategoriasConfig(prepCategorias);
   const notifs = useNotifications();
   useEffect(() => {
     _forceUpdate = setRenderKey;
@@ -7308,10 +9208,22 @@ function App() {
   }, [ready, user, cars, deepLinkDone]);
   async function loadAll() {
     try {
-      const [dbUsers, dbCars, dbSup, dbDark, dbDesp, dbLogs] = await Promise.all([sbGet("users"), sbLoadCars(), sbGet("suppliers"), sbGet("dark_mode"), sbGet("despesas_fixas"), sbGet("activity_log")]);
+      const [dbUsers, dbCars, dbSup, dbPrest, dbDark, dbDesp, dbLogs, dbPrepCats] = await Promise.all([sbGet("users"), sbLoadCars(), sbGet("suppliers"), sbGet("prestadores"), sbGet("dark_mode"), sbGet("despesas_fixas"), sbGet("activity_log"), sbGet("prep_categorias")]);
       if (dbUsers && Array.isArray(dbUsers) && dbUsers.length > 0) setUsers(dbUsers);else await sbSet("users", DEFAULT_USERS);
       if (dbCars && Array.isArray(dbCars)) setCars(dbCars);
+      const prepCfg = applyPrepCategoriasConfig(dbPrepCats);
+      setPrepCategorias(prepCfg);
+      if (!dbPrepCats || !Array.isArray(dbPrepCats)) sbSet("prep_categorias", prepCfg).catch(() => {});
       if (dbSup && Array.isArray(dbSup)) setSuppliers(dbSup);
+      if (dbPrest && Array.isArray(dbPrest)) {
+        setPrestadores(dbPrest);
+      } else if (dbSup && Array.isArray(dbSup)) {
+        const migrados = dbSup.filter(isPrestadorLikeSupplier).map(migrateSupplierToPrestador);
+        if (migrados.length > 0) {
+          setPrestadores(migrados);
+          sbSet("prestadores", migrados).catch(() => {});
+        }
+      }
       if (dbDesp && Array.isArray(dbDesp)) setDespesasFixas(dbDesp);
       if (dbLogs && Array.isArray(dbLogs)) setLogs(dbLogs);
       if (typeof dbDark === "boolean") setDarkMode(dbDark);
@@ -7363,6 +9275,15 @@ function App() {
   async function saveSuppliers(s) {
     setSuppliers(s);
     await sbSet("suppliers", s);
+  }
+  async function savePrestadores(p) {
+    setPrestadores(p);
+    await sbSet("prestadores", p);
+  }
+  async function savePrepCategorias(cfg) {
+    const normalized = applyPrepCategoriasConfig(cfg);
+    setPrepCategorias(normalized);
+    await sbSet("prep_categorias", normalized);
   }
   async function saveDespesas(d) {
     setDespesasFixas(d);
@@ -7424,6 +9345,7 @@ function App() {
     car: selectedCar,
     user: user,
     suppliers: suppliers,
+    prestadores: prestadores,
     onBack: () => {
       setView("dashboard");
       setSelectedCar(null);
@@ -7450,6 +9372,10 @@ function App() {
     suppliers: suppliers,
     onChange: saveSuppliers,
     onClose: () => setShowSuppliers(false)
+  }), showPrestadores && CAN.suppliers(user.role) && /*#__PURE__*/React.createElement(PrestadoresModal, {
+    prestadores: prestadores,
+    onChange: savePrestadores,
+    onClose: () => setShowPrestadores(false)
   }), /*#__PURE__*/React.createElement(NotifToasts, {
     notifs: notifs
   }));
@@ -7486,11 +9412,22 @@ function App() {
     onOpenDespesas: () => setShowDespesas(true),
     onOpenNotifs: () => setShowNotifs(true),
     onOpenPesquisaPlaca: () => setShowPesquisaPlaca(true),
-    onOpenLogistica: () => setShowLogistica(true)
+    onOpenLogistica: () => setShowLogistica(true),
+    onOpenPrestadores: () => setShowPrestadores(true),
+    onOpenPendencias: () => setShowPendencias(true),
+    onOpenPrepCategorias: () => setShowPrepCategorias(true)
   }), showSuppliers && CAN.suppliers(user.role) && /*#__PURE__*/React.createElement(SuppliersModal, {
     suppliers: suppliers,
     onChange: saveSuppliers,
     onClose: () => setShowSuppliers(false)
+  }), showPrestadores && CAN.suppliers(user.role) && /*#__PURE__*/React.createElement(PrestadoresModal, {
+    prestadores: prestadores,
+    onChange: savePrestadores,
+    onClose: () => setShowPrestadores(false)
+  }), showPrepCategorias && CAN.suppliers(user.role) && /*#__PURE__*/React.createElement(PrepCategoriasModal, {
+    categorias: prepCategorias,
+    onChange: savePrepCategorias,
+    onClose: () => setShowPrepCategorias(false)
   }), showUsers && CAN.manageUsers(user.role) && /*#__PURE__*/React.createElement(UserManagementModal, {
     users: users,
     onSave: saveUsers,
@@ -7518,8 +9455,13 @@ function App() {
     onClose: () => setShowPesquisaPlaca(false)
   }), showLogistica && /*#__PURE__*/React.createElement(LogisticaModal, {
     cars: cars,
+    prestadores: prestadores,
     onSelectCar: car => { setSelectedCar(car); setView("carDetail"); setShowLogistica(false); },
     onClose: () => setShowLogistica(false)
+  }), showPendencias && /*#__PURE__*/React.createElement(CentroPendenciasModal, {
+    cars: cars,
+    onSelectCar: car => { setSelectedCar(car); setView("carDetail"); setShowPendencias(false); },
+    onClose: () => setShowPendencias(false)
   }), showNotifs && /*#__PURE__*/React.createElement(NotificacoesModal, {
     logs: logs,
     user: user,
