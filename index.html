@@ -17,6 +17,12 @@
     select option{background:#0F0F0F;color:#F0F0F0;}
     @keyframes slideIn{from{opacity:0;transform:translateX(20px)}to{opacity:1;transform:translateX(0)}}
     @keyframes spin{to{transform:rotate(360deg)}}
+    @keyframes catalogIntroFade{0%,78%{opacity:1;visibility:visible}100%{opacity:0;visibility:hidden}}
+    @keyframes catalogCarArrive{0%{transform:translateX(-140vw) scale(.92)}58%,100%{transform:translateX(0) scale(1)}}
+    @keyframes catalogDoorLeft{0%,58%{transform:rotateY(0)}84%,100%{transform:rotateY(-62deg)}}
+    @keyframes catalogDoorRight{0%,58%{transform:rotateY(0)}84%,100%{transform:rotateY(62deg)}}
+    @keyframes catalogWheelSpin{to{transform:rotate(360deg)}}
+    @keyframes catalogCardsIn{from{opacity:0;transform:translateY(18px)}to{opacity:1;transform:translateY(0)}}
   </style>
 </head>
 <body>
@@ -94,6 +100,7 @@ const PECA_STATUS = ["Necessária", "Orçada", "Comprada", "Instalada"];
 const URGENCIA = ["Alta", "Média", "Baixa"];
 const COMBUSTIVEIS = ["Flex", "Gasolina", "Etanol", "Diesel", "GNV", "Elétrico", "Híbrido"];
 const OPCIONAIS_LISTA = ["Ar-condicionado", "Direção hidráulica", "Vidros elétricos", "Travas elétricas", "Teto solar", "Central multimídia", "Câmera de ré", "Sensor de estacionamento", "Rodas de liga leve", "Alarme", "Retrovisores elétricos", "Bancos em couro", "GPS/Navegação", "Bluetooth", "Volante multifuncional", "Piloto automático", "Farol de neblina"];
+const PERFIS_CATALOGO = ["Família", "Econômico", "Trabalho/Aplicativo", "Primeiro carro", "SUV/Conforto", "Automático", "Utilitário", "Luxo", "Baixo KM"];
 const URG_COL = {
   Alta: "#EF4444",
   Média: "#F59E0B",
@@ -394,6 +401,30 @@ function pendenciasDoCarro(car) {
     atrasado: prazoPrestador !== null && prazoPrestador < 0
   };
 }
+function despesasComTotalPecas(car, pecas) {
+  const total = (pecas || []).filter(p => p.status === "Comprada" || p.status === "Instalada").reduce((s, p) => s + (Number(p.valorUnit) || 0) * Number(p.qtd || 1), 0);
+  const semPecas = (car.despesas || []).filter(d => !d._peca);
+  return total > 0 ? [...semPecas, {
+    id: "pecas-total",
+    _peca: true,
+    desc: "Peças (total)",
+    valor: String(total),
+    fornecedor: ""
+  }] : semPecas;
+}
+function dateFromAny(v) {
+  if (!v) return null;
+  if (v instanceof Date) return v;
+  const s = String(v);
+  const br = s.match(/^(\d{2})\/(\d{2})\/(\d{4})/);
+  if (br) return new Date(`${br[3]}-${br[2]}-${br[1]}T00:00:00`);
+  const d = new Date(s);
+  return Number.isNaN(d.getTime()) ? null : d;
+}
+function daysSinceAny(v) {
+  const d = dateFromAny(v);
+  return d ? Math.max(0, Math.floor((Date.now() - d.getTime()) / 86400000)) : 0;
+}
 function saudePreparacao(car) {
   const p = pendenciasDoCarro(car);
   const dias = daysSince(car.createdAt);
@@ -469,6 +500,142 @@ function carShareText(car) {
   return `${car.marca || ""} ${car.name || ""} ${car.year || ""}\nLoja: ${car.loja || "Premier Multimarcas"}\nPlaca: ${car.plate || "-"}\nKM: ${car.km ? Number(car.km).toLocaleString("pt-BR") + " km" : "-"}\nCor: ${car.color || "-"}\nCombustivel: ${car.combustivel || "-"}\nOpcionais: ${opcionais || "-"}\nValor: ${car.precoVenda ? "R$ " + Number(car.precoVenda).toLocaleString("pt-BR", {
     minimumFractionDigits: 2
   }) : "Consulte"}\n\nFotos disponiveis no atendimento.\n${car.loja || "Premier Multimarcas"} - Fale conosco!`;
+}
+function isCatalogRoute() {
+  try {
+    const params = new URLSearchParams(window.location.search);
+    return params.get("catalogo") === "1" || params.get("catalogo") === "publico" || window.location.hash === "#catalogo";
+  } catch (e) {
+    return false;
+  }
+}
+function setCatalogRoute(active) {
+  try {
+    const url = new URL(window.location.href);
+    if (active) {
+      url.searchParams.set("catalogo", "1");
+      url.searchParams.delete("carro");
+      url.hash = "";
+    } else {
+      url.searchParams.delete("catalogo");
+      if (url.hash === "#catalogo") url.hash = "";
+    }
+    window.history.pushState({}, "", url.toString());
+  } catch (e) {}
+}
+function catalogoColaboradorSlug(user) {
+  return (user && (user.username || user.id) || "").toString().trim();
+}
+function digitsOnly(v) {
+  return String(v || "").replace(/\D/g, "");
+}
+function catalogoWhatsappNumber(user) {
+  const raw = digitsOnly(user && (user.whatsappCatalogo || user.whatsapp || user.telefone || ""));
+  if (!raw) return "";
+  if (raw.startsWith("55")) return raw;
+  if (raw.length === 10 || raw.length === 11) return "55" + raw;
+  return raw;
+}
+function findCatalogoColaborador(users = [], fallbackUser = null) {
+  try {
+    const params = new URLSearchParams(window.location.search);
+    const ref = (params.get("colaborador") || params.get("vendedor") || params.get("consultor") || "").trim().toLowerCase();
+    if (ref) {
+      const found = (users || []).find(u => {
+        const vals = [u.id, u.username, catalogoColaboradorSlug(u)].map(v => String(v || "").toLowerCase());
+        return vals.includes(ref);
+      });
+      if (found) return found;
+    }
+  } catch (e) {}
+  return fallbackUser || null;
+}
+function catalogoPublicoUrl(colaborador) {
+  try {
+    const url = new URL(window.location.href);
+    url.searchParams.set("catalogo", "1");
+    url.searchParams.delete("carro");
+    const slug = catalogoColaboradorSlug(colaborador);
+    if (slug) url.searchParams.set("colaborador", slug);else url.searchParams.delete("colaborador");
+    url.hash = "";
+    return url.toString();
+  } catch (e) {
+    const slug = catalogoColaboradorSlug(colaborador);
+    return window.location.href.split("?")[0] + "?catalogo=1" + (slug ? "&colaborador=" + encodeURIComponent(slug) : "");
+  }
+}
+function isCarDisponivelCatalogo(car) {
+  return !!car && car.status !== "Vendido";
+}
+function catalogoStatusLabel(car) {
+  if (car.status === "Pronto para Venda") return { label: "Disponível", col: C.success };
+  if (car.status === "Em Preparação") return { label: "Preparação final", col: C.info };
+  if (car.status === "Aguardando Aprovação") return { label: "Em conferência", col: C.warning };
+  return { label: "Disponível em breve", col: C.textMuted };
+}
+function catalogoPerfisInferidos(car) {
+  const txt = `${car.marca || ""} ${car.name || ""} ${(car.opcionais || []).join(" ")} ${car.combustivel || ""} ${car.fichaTecnica || ""} ${car.descricaoAnuncio || ""} ${car.perguntasFrequentes || ""}`.toLowerCase();
+  const price = Number(car.precoVenda) || 0;
+  const km = Number(car.km) || 0;
+  const perfis = new Set();
+  if (/suv|creta|hr-v|hrv|compass|renegade|tracker|t-cross|tcross|nivus|duster|kicks|ecosport|captur|sw4/.test(txt)) perfis.add("SUV/Conforto");
+  if (/spin|doblo|doblò|zafira|família|familia|porta-malas|porta malas|7 lugares|sete lugares/.test(txt)) perfis.add("Família");
+  if (/kwid|mobi|uno|gol|ka|onix|hb20|argo|sandero|celta|clio|march|econ[oô]mico|flex|gnv/.test(txt)) perfis.add("Econômico");
+  if (/logan|voyage|prisma|onix plus|virtus|cronos|corolla|civic|city|sentra|versa|etios sedan|aplicativo|uber|99|trabalho/.test(txt)) perfis.add("Trabalho/Aplicativo");
+  if (/strada|saveiro|montana|toro|s10|hilux|ranger|amarok|frontier|utilit[aá]rio|picape|pickup/.test(txt)) perfis.add("Utilitário");
+  if (/autom[aá]tico|cvt|tiptronic|automatica/.test(txt)) perfis.add("Automático");
+  if (/bmw|mercedes|audi|volvo|land rover|lexus|luxo|premium/.test(txt)) perfis.add("Luxo");
+  if (km > 0 && km <= 60000) perfis.add("Baixo KM");
+  if (price > 0 && price <= 70000) perfis.add("Primeiro carro");
+  if (price > 0 && price <= 65000) perfis.add("Econômico");
+  return [...perfis];
+}
+function catalogoPerfisDoCarro(car) {
+  const cfg = (car.perfilCliente || "").trim();
+  return cfg ? [cfg, ...catalogoPerfisInferidos(car).filter(p => p !== cfg)] : catalogoPerfisInferidos(car);
+}
+function catalogoPerfilPrincipal(car) {
+  return catalogoPerfisDoCarro(car)[0] || "Perfil sob consulta";
+}
+function catalogoFaqItems(car) {
+  const raw = (car && car.perguntasFrequentes || "").trim();
+  if (!raw) return [];
+  return raw.split(/\n+/).map(line => {
+    const text = line.trim();
+    if (!text) return null;
+    let pergunta = text;
+    let resposta = "";
+    const qEnd = text.indexOf("?");
+    if (qEnd >= 0 && qEnd < text.length - 1) {
+      pergunta = text.slice(0, qEnd + 1).trim();
+      resposta = text.slice(qEnd + 1).replace(/^[:\-\s]+/, "").trim();
+    } else {
+      const sep = text.includes("|") ? "|" : text.includes(" - ") ? " - " : text.includes(": ") ? ": " : "";
+      if (sep) {
+        const parts = text.split(sep);
+        pergunta = (parts.shift() || "").trim();
+        resposta = parts.join(sep).trim();
+      }
+    }
+    return pergunta ? { pergunta, resposta } : null;
+  }).filter(Boolean);
+}
+function catalogoFaqShareText(car) {
+  return catalogoFaqItems(car).slice(0, 4).map(item => `- ${item.pergunta}${item.resposta ? " " + item.resposta : ""}`).join("\n");
+}
+function catalogoShareText(car) {
+  const opcionais = (car.opcionais || []).slice(0, 8).join(", ");
+  const desc = (car.descricaoAnuncio || "").trim();
+  const ficha = (car.fichaTecnica || "").trim();
+  const faq = catalogoFaqShareText(car);
+  return `${car.marca || ""} ${car.name || ""} ${car.year || ""}\nLoja: ${car.loja || "Premier Multimarcas"}\nPerfil: ${catalogoPerfilPrincipal(car)}\nKM: ${car.km ? Number(car.km).toLocaleString("pt-BR") + " km" : "-"}\nCor: ${car.color || "-"}\nCombustivel: ${car.combustivel || "-"}\nOpcionais: ${opcionais || "-"}\nValor: ${car.precoVenda ? "R$ " + Number(car.precoVenda).toLocaleString("pt-BR", {
+    minimumFractionDigits: 2
+  }) : "Consulte"}${ficha ? `\n\nFicha técnica:\n${ficha}` : ""}${desc ? `\n\n${desc}` : ""}${faq ? `\n\nPerguntas frequentes:\n${faq}` : ""}\n\nTenho interesse nesse veículo.`;
+}
+function catalogoWhatsappUrl(car, colaborador) {
+  const numero = catalogoWhatsappNumber(colaborador);
+  const text = encodeURIComponent(catalogoShareText(car));
+  return numero ? `https://wa.me/${numero}?text=${text}` : `https://wa.me/?text=${text}`;
 }
 
 // ═══ SUPABASE ═══════════════════════════════════════════════════
@@ -682,6 +849,10 @@ function createCar(user) {
     color: "",
     combustivel: "",
     opcionais: [],
+    perfilCliente: "",
+    fichaTecnica: "",
+    descricaoAnuncio: "",
+    perguntasFrequentes: "",
     km: "",
     origem: "Pessoa Física",
     loja: user.loja || "Premier Multimarcas",
@@ -1863,6 +2034,7 @@ function UserManagementModal({
     name: "",
     role: "funcionario",
     loja: "Premier Multimarcas",
+    whatsappCatalogo: "",
     ativo: true
   };
   const [form, setForm] = useState(empty);
@@ -1896,6 +2068,7 @@ function UserManagementModal({
       name: u.name,
       role: u.role,
       loja: u.loja,
+      whatsappCatalogo: u.whatsappCatalogo || "",
       ativo: u.ativo
     });
   }
@@ -1912,6 +2085,10 @@ function UserManagementModal({
     const upd = list.filter(u => u.id !== id);
     setList(upd);
     onSave(upd);
+  }
+  function copyCatalogLink(u) {
+    const link = catalogoPublicoUrl(u);
+    navigator.clipboard.writeText(link).then(() => pushNotif("Link do catálogo copiado", "success")).catch(() => pushNotif("Não foi possível copiar o link", "error"));
   }
   return /*#__PURE__*/React.createElement(Modal, {
     title: "\uD83D\uDC64 Gerenciar Usu\xE1rios",
@@ -1990,6 +2167,15 @@ function UserManagementModal({
     })),
     options: LOJAS,
     small: true
+  }), /*#__PURE__*/React.createElement(Inp, {
+    label: "WhatsApp do catálogo",
+    value: form.whatsappCatalogo || "",
+    onChange: v => setForm(p => ({
+      ...p,
+      whatsappCatalogo: v
+    })),
+    placeholder: "Ex: 14999999999",
+    small: true
   })), /*#__PURE__*/React.createElement("div", {
     style: {
       display: "flex",
@@ -2042,11 +2228,15 @@ function UserManagementModal({
       fontSize: 11,
       color: C.textMuted
     }
-  }, ROLE_LABEL[u.role] || u.role, " \xB7 ", u.loja, " \xB7 ", /*#__PURE__*/React.createElement("b", {
+  }, ROLE_LABEL[u.role] || u.role, " \xB7 ", u.loja, u.whatsappCatalogo ? ` · WhatsApp: ${u.whatsappCatalogo}` : " · Sem WhatsApp", " \xB7 ", /*#__PURE__*/React.createElement("b", {
     style: {
       color: C.info
     }
   }, u.username))), /*#__PURE__*/React.createElement(Btn, {
+    onClick: () => copyCatalogLink(u),
+    variant: catalogoWhatsappNumber(u) ? "success" : "ghost",
+    small: true
+  }, "Link"), /*#__PURE__*/React.createElement(Btn, {
     onClick: () => startEdit(u),
     variant: "ghost",
     small: true
@@ -3267,7 +3457,7 @@ function CentroPendenciasModal({
   const parados = dados.filter(x => x.p.parado).sort((a, b) => daysSince(b.car.createdAt) - daysSince(a.car.createdAt));
   function abrir(car) {
     onClose();
-    onSelectCar(car);
+    onSelectCar(car, "pecas");
   }
   function PecaRow({
     item,
@@ -3566,6 +3756,261 @@ function CentroPendenciasModal({
     item: item,
     tipo: "parado"
   })))));
+}
+
+// ═══ PEÇAS PENDENTES MODAL ══════════════════════════════════════
+function PecasPendentesModal({
+  cars,
+  user,
+  onSelectCar,
+  onUpdateCar,
+  onClose
+}) {
+  const [loja, setLoja] = useState("Todas");
+  const [tipo, setTipo] = useState("Todas");
+  const [urgencia, setUrgencia] = useState("Todas");
+  const [busca, setBusca] = useState("");
+  const ativos = (cars || []).filter(c => c.status !== "Vendido");
+  const itens = ativos.flatMap(car => (car.pecas || []).filter(p => ["Necessária", "Orçada", "Comprada"].includes(p.status)).map(peca => {
+    const instalar = peca.status === "Comprada";
+    const dataRef = instalar ? peca.compradoEm || peca.addedAt : peca.addedAt;
+    return {
+      car,
+      peca,
+      instalar,
+      dias: daysSinceAny(dataRef),
+      dataRef
+    };
+  })).filter(item => loja === "Todas" || item.car.loja === loja).filter(item => tipo === "Todas" || tipo === "Instalar" && item.instalar || tipo === "Comprar" && !item.instalar).filter(item => urgencia === "Todas" || item.peca.urgencia === urgencia).filter(item => {
+    const q = busca.toLowerCase().trim();
+    if (!q) return true;
+    return (item.peca.nome || "").toLowerCase().includes(q) || (item.car.name || "").toLowerCase().includes(q) || (item.car.marca || "").toLowerCase().includes(q) || (item.car.plate || "").toLowerCase().includes(q);
+  }).sort((a, b) => Number(b.instalar) - Number(a.instalar) || (URG_COL[a.peca.urgencia] === C.error ? -1 : 0) - (URG_COL[b.peca.urgencia] === C.error ? -1 : 0) || b.dias - a.dias);
+  const totalComprar = itens.filter(i => !i.instalar).length;
+  const totalInstalar = itens.filter(i => i.instalar).length;
+  const totalValor = itens.reduce((s, i) => s + (Number(i.peca.valorUnit) || 0) * Number(i.peca.qtd || 1), 0);
+  const recorrentes = Object.values(itens.reduce((acc, item) => {
+    const key = (item.peca.nome || "").trim().toLowerCase();
+    if (!key) return acc;
+    if (!acc[key]) acc[key] = {
+      nome: item.peca.nome,
+      qtd: 0,
+      carros: []
+    };
+    acc[key].qtd += Number(item.peca.qtd || 1);
+    acc[key].carros.push(item.car);
+    return acc;
+  }, {})).filter(x => x.carros.length > 1).sort((a, b) => b.carros.length - a.carros.length || b.qtd - a.qtd).slice(0, 4);
+  function abrir(car) {
+    onClose();
+    onSelectCar(car);
+  }
+  function marcarInstalada(item) {
+    const car = item.car;
+    const peca = item.peca;
+    const updPecas = (car.pecas || []).map(p => p.id === peca.id ? {
+      ...p,
+      status: "Instalada",
+      instaladoPor: user.name,
+      instaladoEm: nowStr()
+    } : p);
+    const updated = {
+      ...car,
+      pecas: updPecas,
+      despesas: despesasComTotalPecas(car, updPecas),
+      historico: [...(car.historico || []), {
+        id: uid(),
+        acao: `Peça instalada: ${peca.nome || "peça"}`,
+        por: user.name,
+        em: nowStr()
+      }]
+    };
+    onUpdateCar(updated);
+    pushNotif("Peça marcada como instalada", "success");
+  }
+  return /*#__PURE__*/React.createElement(Modal, {
+    title: "🔩 Peças Pendentes",
+    onClose: onClose,
+    width: 900
+  }, /*#__PURE__*/React.createElement("div", {
+    style: {
+      display: "flex",
+      flexDirection: "column",
+      gap: 12
+    }
+  }, /*#__PURE__*/React.createElement("div", {
+    style: {
+      display: "grid",
+      gridTemplateColumns: "repeat(auto-fit,minmax(130px,1fr))",
+      gap: 8
+    }
+  }, [{
+    l: "A comprar/orçar",
+    v: totalComprar,
+    c: C.warning
+  }, {
+    l: "Compradas sem instalar",
+    v: totalInstalar,
+    c: totalInstalar ? C.error : C.success
+  }, {
+    l: "Valor envolvido",
+    v: fmt(totalValor),
+    c: C.info
+  }].map(x => /*#__PURE__*/React.createElement("div", {
+    key: x.l,
+    style: {
+      background: C.bg,
+      border: `1px solid ${x.c}44`,
+      borderRadius: 10,
+      padding: "10px 11px"
+    }
+  }, /*#__PURE__*/React.createElement("div", {
+    style: {
+      color: x.c,
+      fontSize: String(x.v).startsWith("R$") ? 14 : 22,
+      fontWeight: 900,
+      lineHeight: 1.1
+    }
+  }, x.v), /*#__PURE__*/React.createElement("div", {
+    style: {
+      color: C.textMuted,
+      fontSize: 10,
+      marginTop: 3
+    }
+  }, x.l)))), recorrentes.length > 0 && /*#__PURE__*/React.createElement("div", {
+    style: {
+      background: C.warning + "12",
+      border: `1px solid ${C.warning}44`,
+      borderRadius: 10,
+      padding: "9px 11px",
+      color: C.warning,
+      fontSize: 11,
+      fontWeight: 700,
+      lineHeight: 1.45
+    }
+  }, "Peças recorrentes: ", recorrentes.map(r => `${r.nome} em ${r.carros.length} carros`).join(" · ")), /*#__PURE__*/React.createElement("div", {
+    style: {
+      display: "grid",
+      gridTemplateColumns: "repeat(auto-fit,minmax(120px,1fr))",
+      gap: 8
+    }
+  }, /*#__PURE__*/React.createElement(Sel, {
+    label: "Loja",
+    value: loja,
+    onChange: setLoja,
+    options: ["Todas", ...LOJAS],
+    small: true
+  }), /*#__PURE__*/React.createElement(Sel, {
+    label: "Tipo",
+    value: tipo,
+    onChange: setTipo,
+    options: ["Todas", "Comprar", "Instalar"],
+    small: true
+  }), /*#__PURE__*/React.createElement(Sel, {
+    label: "Urgência",
+    value: urgencia,
+    onChange: setUrgencia,
+    options: ["Todas", ...URGENCIA],
+    small: true
+  }), /*#__PURE__*/React.createElement(Inp, {
+    label: "Buscar",
+    value: busca,
+    onChange: setBusca,
+    placeholder: "Peça, carro ou placa",
+    small: true
+  })), itens.length === 0 ? /*#__PURE__*/React.createElement("div", {
+    style: {
+      background: C.bg,
+      border: `1px solid ${C.border}`,
+      borderRadius: 10,
+      padding: "18px 12px",
+      textAlign: "center",
+      color: C.textMuted,
+      fontSize: 12
+    }
+  }, "Nenhuma peça pendente com estes filtros.") : /*#__PURE__*/React.createElement("div", {
+    style: {
+      display: "flex",
+      flexDirection: "column",
+      gap: 8
+    }
+  }, itens.map(item => {
+    const car = item.car;
+    const peca = item.peca;
+    const col = item.instalar ? C.error : C.warning;
+    return /*#__PURE__*/React.createElement("div", {
+      key: `${car.id}-${peca.id || peca.nome}`,
+      onClick: () => abrir(car),
+      style: {
+        background: C.card,
+        border: `1px solid ${col}44`,
+        borderRadius: 10,
+        padding: "10px 12px",
+        display: "flex",
+        gap: 10,
+        alignItems: "center",
+        cursor: "pointer"
+      }
+    }, /*#__PURE__*/React.createElement("div", {
+      style: {
+        flex: 1,
+        minWidth: 0
+      }
+    }, /*#__PURE__*/React.createElement("div", {
+      style: {
+        display: "flex",
+        gap: 6,
+        alignItems: "center",
+        flexWrap: "wrap"
+      }
+    }, /*#__PURE__*/React.createElement("span", {
+      style: {
+        color: C.text,
+        fontSize: 13,
+        fontWeight: 900
+      }
+    }, peca.nome || "Peça sem nome"), /*#__PURE__*/React.createElement(Badge, {
+      label: peca.status || "Pendente",
+      col: col
+    }), peca.urgencia && /*#__PURE__*/React.createElement(Badge, {
+      label: peca.urgencia,
+      col: URG_COL[peca.urgencia] || C.textMuted
+    })), /*#__PURE__*/React.createElement("div", {
+      style: {
+        color: C.textMuted,
+        fontSize: 11,
+        marginTop: 4,
+        lineHeight: 1.4
+      }
+    }, tituloCarro(car), " · ", car.plate || "sem placa", " · ", car.loja || "sem loja", peca.categoria ? ` · ${peca.categoria}` : "", peca.fornecedor ? ` · ${peca.fornecedor}` : ""), /*#__PURE__*/React.createElement("div", {
+      style: {
+        color: C.textDim,
+        fontSize: 10,
+        marginTop: 3
+      }
+    }, item.dias, " dia(s) pendente", peca.addedBy ? ` · incluída por ${peca.addedBy}` : "")), /*#__PURE__*/React.createElement("div", {
+      style: {
+        display: "flex",
+        flexDirection: "column",
+        gap: 6,
+        flexShrink: 0
+      }
+    }, /*#__PURE__*/React.createElement(Btn, {
+      onClick: e => {
+        e.stopPropagation();
+        abrir(car);
+      },
+      small: true,
+      variant: "ghost"
+    }, "Abrir ficha"), item.instalar && /*#__PURE__*/React.createElement(Btn, {
+      onClick: e => {
+        e.stopPropagation();
+        marcarInstalada(item);
+      },
+      small: true,
+      variant: "success"
+    }, "Instalada")));
+  }))));
 }
 
 // ═══ PLACA FIPE MODAL ═══════════════════════════════════════════
@@ -4372,7 +4817,66 @@ function OverviewTab({
         style: { padding: "4px 10px", borderRadius: 14, cursor: "pointer", fontFamily: "inherit", fontSize: 11, fontWeight: sel ? 700 : 400, background: sel ? C.red + "22" : "transparent", border: `1px solid ${sel ? C.red : C.border}`, color: sel ? C.red : C.textMuted }
       }, sel ? "\u2713 " : "", op);
     })
-  )), car.origem === "Consignado" && /*#__PURE__*/React.createElement("div", {
+  )), /*#__PURE__*/React.createElement("div", {
+    style: {
+      marginTop: 12,
+      padding: 12,
+      background: C.bg,
+      border: `1px solid ${C.border}`,
+      borderRadius: 9
+    }
+  }, /*#__PURE__*/React.createElement("div", {
+    style: {
+      color: C.red,
+      fontWeight: 800,
+      fontSize: 11,
+      marginBottom: 10,
+      letterSpacing: 1
+    }
+  }, "ANÚNCIO / CATÁLOGO"), /*#__PURE__*/React.createElement("div", {
+    style: {
+      display: "grid",
+      gridTemplateColumns: "repeat(auto-fit,minmax(170px,1fr))",
+      gap: 10,
+      marginBottom: 10
+    }
+  }, /*#__PURE__*/React.createElement(Sel, {
+    label: "Perfil ideal do cliente",
+    value: car.perfilCliente || "",
+    onChange: v => onUpdate("perfilCliente", v),
+    options: ["", ...PERFIS_CATALOGO]
+  }), /*#__PURE__*/React.createElement(Inp, {
+    label: "Preço para anúncio (R$)",
+    value: car.precoVenda || "",
+    onChange: v => onUpdate("precoVenda", v),
+    type: "number",
+    placeholder: "Valor que aparece no catálogo"
+  })), /*#__PURE__*/React.createElement(Txta, {
+    label: "Ficha técnica para anúncio",
+    value: car.fichaTecnica || "",
+    onChange: v => onUpdate("fichaTecnica", v),
+    rows: 4,
+    placeholder: "Ex: Motor 1.8 Flex, câmbio automático, completo, multimídia, câmera de ré, pneus bons..."
+  }), /*#__PURE__*/React.createElement("div", {
+    style: {
+      marginTop: 10,
+      display: "flex",
+      flexDirection: "column",
+      gap: 10
+    }
+  }, /*#__PURE__*/React.createElement(Txta, {
+    label: "Descrição que quebra objeções",
+    value: car.descricaoAnuncio || "",
+    onChange: v => onUpdate("descricaoAnuncio", v),
+    rows: 4,
+    placeholder: "Ex: Veículo revisado, cautelar aprovada, documentação em ordem, preparação conferida e pronto para visita. Ideal para quem busca segurança, conforto e baixa manutenção."
+  }), /*#__PURE__*/React.createElement(Txta, {
+    label: "Perguntas frequentes do anúncio",
+    value: car.perguntasFrequentes || "",
+    onChange: v => onUpdate("perguntasFrequentes", v),
+    rows: 4,
+    placeholder: "Ex: Aceita troca? Sim, avaliamos troca. Tem garantia? Sim, conforme condições da loja. Posso financiar? Sim, fazemos simulação."
+  }))), car.origem === "Consignado" && /*#__PURE__*/React.createElement("div", {
     style: {
       marginTop: 12,
       padding: 12,
@@ -5120,6 +5624,7 @@ function PecasTab({
   const empty = {
     nome: "",
     qtd: "1",
+    categoria: "",
     urgencia: "Média",
     status: "Necessária",
     fornecedor: "",
@@ -5128,6 +5633,7 @@ function PecasTab({
   };
   const [form, setForm] = useState(empty);
   const pecas = car.pecas || [];
+  const categoriasPeca = Object.values(getPreparationCats(car)).map(c => c.label);
   const ST_COL2 = {
     Necessária: C.error,
     Orçada: C.warning,
@@ -5135,15 +5641,7 @@ function PecasTab({
     Instalada: C.success
   };
   function recalcDesp(upd) {
-    const total = upd.filter(p => p.status === "Comprada" || p.status === "Instalada").reduce((s, p) => s + (Number(p.valorUnit) || 0) * Number(p.qtd || 1), 0);
-    const semPecas = (car.despesas || []).filter(d => !d._peca);
-    onChange("despesas", total > 0 ? [...semPecas, {
-      id: "pecas-total",
-      _peca: true,
-      desc: "Peças (total)",
-      valor: String(total),
-      fornecedor: ""
-    }] : semPecas);
+    onChange("despesas", despesasComTotalPecas(car, upd));
   }
   function add() {
     if (!form.nome.trim()) return;
@@ -5169,6 +5667,10 @@ function PecasTab({
       if (k === "status" && v === "Comprada") {
         np.compradoPor = user.name;
         np.compradoEm = nowStr();
+      }
+      if (k === "status" && v === "Instalada") {
+        np.instaladoPor = user.name;
+        np.instaladoEm = nowStr();
       }
       return np;
     });
@@ -5247,7 +5749,7 @@ function PecasTab({
   })), /*#__PURE__*/React.createElement("div", {
     style: {
       display: "grid",
-      gridTemplateColumns: "1fr 1fr 1fr",
+      gridTemplateColumns: "repeat(auto-fit,minmax(120px,1fr))",
       gap: 9,
       marginBottom: 9
     }
@@ -5259,6 +5761,15 @@ function PecasTab({
       status: v
     })),
     options: PECA_STATUS,
+    small: true
+  }), /*#__PURE__*/React.createElement(Sel, {
+    label: "Categoria",
+    value: form.categoria,
+    onChange: v => setForm(p => ({
+      ...p,
+      categoria: v
+    })),
+    options: ["", ...categoriasPeca],
     small: true
   }), /*#__PURE__*/React.createElement(Inp, {
     label: "Valor unit\xE1rio (R$)",
@@ -5402,18 +5913,24 @@ function PecasTab({
       marginLeft: "auto",
       fontFamily: "inherit"
     }
-  }, "Remover")), (p.fornecedor || p.obs) && /*#__PURE__*/React.createElement("div", {
+  }, "Remover")), (p.categoria || p.fornecedor || p.obs) && /*#__PURE__*/React.createElement("div", {
     style: {
       fontSize: 11,
       color: C.textMuted
     }
-  }, p.fornecedor ? `🏢 ${p.fornecedor}` : "", p.obs ? ` · ${p.obs}` : ""), p.compradoPor && /*#__PURE__*/React.createElement("div", {
+  }, p.categoria ? `🔧 ${p.categoria}` : "", p.categoria && p.fornecedor ? " · " : "", p.fornecedor ? `🏢 ${p.fornecedor}` : "", p.obs ? ` · ${p.obs}` : ""), p.compradoPor && /*#__PURE__*/React.createElement("div", {
     style: {
       fontSize: 9,
       color: C.textDim,
       marginTop: 2
     }
-  }, "\uD83D\uDED2 ", p.compradoPor, " \xB7 ", p.compradoEm), /*#__PURE__*/React.createElement("div", {
+  }, "\uD83D\uDED2 ", p.compradoPor, " \xB7 ", p.compradoEm), p.instaladoPor && /*#__PURE__*/React.createElement("div", {
+    style: {
+      fontSize: 9,
+      color: C.textDim,
+      marginTop: 2
+    }
+  }, "\u2713 Instalado por ", p.instaladoPor, " \xB7 ", p.instaladoEm), /*#__PURE__*/React.createElement("div", {
     style: {
       fontSize: 9,
       color: C.textDim,
@@ -6838,12 +7355,13 @@ function CarDetail({
   user,
   suppliers,
   prestadores,
+  initialTab = "overview",
   onBack,
   onSave,
   onDelete
 }) {
   const [car, setCar] = useState(() => ensureCarPreparationCategories(init));
-  const [tab, setTab] = useState("overview");
+  const [tab, setTab] = useState(initialTab || "overview");
   const [showCats, setShowCats] = useState(false);
   const [showPrest, setShowPrest] = useState(false);
   const [showFipe, setShowFipe] = useState(false);
@@ -6853,7 +7371,8 @@ function CarDetail({
   const saveTimer = useRef(null);
   useEffect(() => {
     setCar(ensureCarPreparationCategories(init));
-  }, [init.id]);
+    setTab(initialTab || "overview");
+  }, [init.id, initialTab]);
   function addHist(updated, acao) {
     return {
       ...updated,
@@ -7750,6 +8269,773 @@ function CarCard({
       fontWeight: 700
     }
   }, "\u23F3 Aguardando sua aprova\xE7\xE3o")));
+}
+
+// ═══ CATÁLOGO PÚBLICO ═══════════════════════════════════════════
+function CatalogoPublico({
+  cars,
+  users = [],
+  user,
+  onBack
+}) {
+  const [search, setSearch] = useState("");
+  const [status, setStatus] = useState("Todos");
+  const [precoMax, setPrecoMax] = useState("");
+  const [perfil, setPerfil] = useState("Todos");
+  const [detail, setDetail] = useState(null);
+  const [showIntro, setShowIntro] = useState(true);
+  useEffect(() => {
+    const t = setTimeout(() => setShowIntro(false), 2600);
+    return () => clearTimeout(t);
+  }, []);
+  const budget = Number(String(precoMax || "").replace(/\D/g, "")) || 0;
+  const colaborador = findCatalogoColaborador(users, user);
+  const colaboradorNumero = catalogoWhatsappNumber(colaborador);
+  const disponiveis = (cars || []).filter(isCarDisponivelCatalogo);
+  const filtrados = disponiveis.filter(car => {
+    const q = search.toLowerCase().trim();
+    const textoBusca = `${car.name || ""} ${car.marca || ""} ${car.year || ""} ${car.color || ""} ${car.fichaTecnica || ""} ${car.descricaoAnuncio || ""} ${car.perguntasFrequentes || ""}`.toLowerCase();
+    const matchQ = !q || textoBusca.includes(q);
+    const matchStatus = status === "Todos" || status === "Prontos" && car.status === "Pronto para Venda" || status === "Preparacao" && ["Em Preparação", "Aguardando Aprovação"].includes(car.status) || status === "EmBreve" && car.status === "Entrada";
+    const preco = Number(car.precoVenda) || 0;
+    const matchPreco = !budget || !preco || preco <= budget;
+    const perfisCarro = catalogoPerfisDoCarro(car);
+    const matchPerfil = perfil === "Todos" || perfisCarro.includes(perfil);
+    return matchQ && matchStatus && matchPreco && matchPerfil;
+  }).sort((a, b) => {
+    const sa = a.status === "Pronto para Venda" ? 0 : a.status === "Em Preparação" ? 1 : 2;
+    const sb = b.status === "Pronto para Venda" ? 0 : b.status === "Em Preparação" ? 1 : 2;
+    const pa = Number(a.precoVenda) || 0;
+    const pb = Number(b.precoVenda) || 0;
+    const distA = budget && pa ? Math.abs(budget - pa) : 999999999;
+    const distB = budget && pb ? Math.abs(budget - pb) : 999999999;
+    return sa - sb || distA - distB || (b.fotos || []).length - (a.fotos || []).length || tituloCarro(a).localeCompare(tituloCarro(b));
+  });
+  const stats = [{
+    l: "Disponíveis",
+    v: disponiveis.length,
+    c: C.red
+  }, {
+    l: "Prontos",
+    v: disponiveis.filter(c => c.status === "Pronto para Venda").length,
+    c: C.success
+  }, {
+    l: "Em preparação",
+    v: disponiveis.filter(c => c.status === "Em Preparação" || c.status === "Aguardando Aprovação").length,
+    c: C.info
+  }];
+  function copiarLink() {
+    const link = catalogoPublicoUrl(colaborador);
+    navigator.clipboard.writeText(link).then(() => pushNotif(colaborador ? "Link único do catálogo copiado" : "Link do catálogo copiado", "success")).catch(() => pushNotif("Não foi possível copiar o link", "error"));
+  }
+  function whatsapp(car) {
+    if (!colaboradorNumero) pushNotif("Cadastre o WhatsApp do colaborador para direcionar o cliente.", "warning");
+    window.open(catalogoWhatsappUrl(car, colaborador), "_blank");
+  }
+  function CatalogIntro() {
+    return /*#__PURE__*/React.createElement("div", {
+      style: {
+        position: "fixed",
+        inset: 0,
+        zIndex: 500,
+        background: C.bg,
+        display: "flex",
+        alignItems: "center",
+        justifyContent: "center",
+        pointerEvents: "none",
+        animation: "catalogIntroFade 2.55s ease forwards"
+      }
+    }, /*#__PURE__*/React.createElement("div", {
+      style: {
+        width: "min(86vw,560px)",
+        height: 260,
+        position: "relative",
+        display: "flex",
+        alignItems: "center",
+        justifyContent: "center"
+      }
+    }, /*#__PURE__*/React.createElement("img", {
+      src: LOGO,
+      alt: "Premier",
+      style: {
+        position: "absolute",
+        top: 8,
+        height: 54,
+        maxWidth: "70%",
+        objectFit: "contain",
+        opacity: .96
+      }
+    }), /*#__PURE__*/React.createElement("div", {
+      style: {
+        position: "absolute",
+        bottom: 48,
+        left: "50%",
+        width: "min(78vw,430px)",
+        height: 150,
+        transform: "translateX(-50%)"
+      }
+    }, /*#__PURE__*/React.createElement("div", {
+      style: {
+        position: "relative",
+        width: "100%",
+        height: "100%",
+        animation: "catalogCarArrive 1.35s cubic-bezier(.16,1,.3,1) forwards"
+      }
+    }, /*#__PURE__*/React.createElement("div", {
+      style: {
+        position: "absolute",
+        left: "27%",
+        bottom: 86,
+        width: "46%",
+        height: 48,
+        background: "#151515",
+        border: `2px solid ${C.red}`,
+        borderRadius: "42px 42px 10px 10px",
+        boxShadow: "inset 0 0 0 8px #2A2A2A"
+      }
+    }), /*#__PURE__*/React.createElement("div", {
+      style: {
+        position: "absolute",
+        left: "5%",
+        right: "5%",
+        bottom: 35,
+        height: 74,
+        background: C.red,
+        borderRadius: "42px 48px 18px 18px",
+        boxShadow: "0 22px 44px #0009, inset 0 -14px 0 #7f0b12"
+      }
+    }), /*#__PURE__*/React.createElement("div", {
+      style: {
+        position: "absolute",
+        left: "34%",
+        bottom: 44,
+        width: "17%",
+        height: 58,
+        background: "#B40E17",
+        border: "1px solid #E65058",
+        borderRadius: "10px 5px 8px 8px",
+        transformOrigin: "left center",
+        animation: "catalogDoorLeft 2.1s ease forwards"
+      }
+    }), /*#__PURE__*/React.createElement("div", {
+      style: {
+        position: "absolute",
+        right: "34%",
+        bottom: 44,
+        width: "17%",
+        height: 58,
+        background: "#B40E17",
+        border: "1px solid #E65058",
+        borderRadius: "5px 10px 8px 8px",
+        transformOrigin: "right center",
+        animation: "catalogDoorRight 2.1s ease forwards"
+      }
+    }), /*#__PURE__*/React.createElement("div", {
+      style: {
+        position: "absolute",
+        left: "8%",
+        bottom: 56,
+        width: 28,
+        height: 11,
+        background: "#FDE68A",
+        borderRadius: 8,
+        boxShadow: "0 0 18px #FDE68A88"
+      }
+    }), /*#__PURE__*/React.createElement("div", {
+      style: {
+        position: "absolute",
+        right: "8%",
+        bottom: 56,
+        width: 20,
+        height: 10,
+        background: "#F87171",
+        borderRadius: 8
+      }
+    }), /*#__PURE__*/React.createElement("div", {
+      style: {
+        position: "absolute",
+        left: "19%",
+        bottom: 19,
+        width: 52,
+        height: 52,
+        borderRadius: "50%",
+        background: "#E5E7EB",
+        border: "8px solid #101010",
+        boxShadow: `inset 0 0 0 6px ${C.card}`,
+        animation: "catalogWheelSpin .42s linear infinite"
+      }
+    }), /*#__PURE__*/React.createElement("div", {
+      style: {
+        position: "absolute",
+        right: "19%",
+        bottom: 19,
+        width: 52,
+        height: 52,
+        borderRadius: "50%",
+        background: "#E5E7EB",
+        border: "8px solid #101010",
+        boxShadow: `inset 0 0 0 6px ${C.card}`,
+        animation: "catalogWheelSpin .42s linear infinite"
+      }
+    }))), /*#__PURE__*/React.createElement("div", {
+      style: {
+        position: "absolute",
+        bottom: 10,
+        left: 0,
+        right: 0,
+        textAlign: "center",
+        color: C.text,
+        fontWeight: 900,
+        fontSize: 18,
+        letterSpacing: 0
+      }
+    }, "Catálogo Premier")));
+  }
+  function CatalogCard({
+    car
+  }) {
+    const foto = car.fotos && car.fotos.length > 0 ? car.fotos[0].url : null;
+    const st = catalogoStatusLabel(car);
+    const facts = [car.year, car.km ? Number(car.km).toLocaleString("pt-BR") + " km" : "", car.color || "", car.combustivel || ""].filter(Boolean);
+    const opcionais = (car.opcionais || []).slice(0, 5);
+    const perfilPrincipal = catalogoPerfilPrincipal(car);
+    const desc = (car.descricaoAnuncio || "").trim();
+    const faqCount = catalogoFaqItems(car).length;
+    return /*#__PURE__*/React.createElement("article", {
+      onClick: () => setDetail(car),
+      style: {
+        background: C.card,
+        border: `1px solid ${C.border}`,
+        borderRadius: 10,
+        overflow: "hidden",
+        cursor: "pointer",
+        display: "flex",
+        flexDirection: "column",
+        minHeight: 0,
+        boxShadow: "0 8px 24px #0004"
+      }
+    }, /*#__PURE__*/React.createElement("div", {
+      style: {
+        position: "relative",
+        aspectRatio: "4/3",
+        background: C.bg,
+        overflow: "hidden"
+      }
+    }, foto ? /*#__PURE__*/React.createElement("img", {
+      src: foto,
+      alt: tituloCarro(car),
+      style: {
+        width: "100%",
+        height: "100%",
+        objectFit: "cover",
+        display: "block"
+      }
+    }) : /*#__PURE__*/React.createElement("div", {
+      style: {
+        height: "100%",
+        display: "flex",
+        alignItems: "center",
+        justifyContent: "center",
+        color: C.textDim,
+        fontSize: 44
+      }
+    }, "\uD83D\uDE97"), /*#__PURE__*/React.createElement("div", {
+      style: {
+        position: "absolute",
+        top: 8,
+        left: 8,
+        display: "flex",
+        gap: 6,
+        flexWrap: "wrap"
+      }
+    }, /*#__PURE__*/React.createElement(Badge, {
+      label: st.label,
+      col: st.col
+    }), car.fotos && car.fotos.length > 1 && /*#__PURE__*/React.createElement(Badge, {
+      label: `${car.fotos.length} fotos`,
+      col: C.textMuted
+    }), faqCount > 0 && /*#__PURE__*/React.createElement(Badge, {
+      label: "FAQ",
+      col: C.warning
+    }))), /*#__PURE__*/React.createElement("div", {
+      style: {
+        padding: 13,
+        display: "flex",
+        flexDirection: "column",
+        gap: 8,
+        flex: 1
+      }
+    }, /*#__PURE__*/React.createElement("div", null, /*#__PURE__*/React.createElement("div", {
+      style: {
+        color: C.red,
+        fontSize: 10,
+        fontWeight: 800,
+        marginBottom: 2
+      }
+    }, car.marca || "Premier"), /*#__PURE__*/React.createElement("div", {
+      style: {
+        color: C.text,
+        fontSize: 16,
+        fontWeight: 900,
+        lineHeight: 1.2
+      }
+    }, car.name || "Veículo disponível"), /*#__PURE__*/React.createElement("div", {
+      style: {
+        color: C.textMuted,
+        fontSize: 11,
+        marginTop: 4,
+        lineHeight: 1.4
+      }
+    }, facts.join(" · ") || "Dados sob consulta")), /*#__PURE__*/React.createElement("div", {
+      style: {
+        display: "flex",
+        gap: 5,
+        flexWrap: "wrap",
+        marginTop: 7
+      }
+    }, /*#__PURE__*/React.createElement(Badge, {
+      label: perfilPrincipal,
+      col: C.info
+    })), desc && /*#__PURE__*/React.createElement("div", {
+      style: {
+        color: C.text,
+        fontSize: 11,
+        lineHeight: 1.45,
+        background: C.bg,
+        border: `1px solid ${C.border}`,
+        borderRadius: 8,
+        padding: "8px 9px"
+      }
+    }, desc.length > 150 ? desc.slice(0, 147) + "..." : desc), /*#__PURE__*/React.createElement("div", {
+      style: {
+        color: car.precoVenda ? C.success : C.textMuted,
+        fontSize: 18,
+        fontWeight: 900
+      }
+    }, car.precoVenda ? fmt(car.precoVenda) : "Consulte"), opcionais.length > 0 && /*#__PURE__*/React.createElement("div", {
+      style: {
+        display: "flex",
+        gap: 5,
+        flexWrap: "wrap"
+      }
+    }, opcionais.map(op => /*#__PURE__*/React.createElement("span", {
+      key: op,
+      style: {
+        border: `1px solid ${C.border}`,
+        color: C.textMuted,
+        borderRadius: 12,
+        padding: "2px 7px",
+        fontSize: 9,
+        fontWeight: 700
+      }
+    }, op))), /*#__PURE__*/React.createElement("div", {
+      style: {
+        marginTop: "auto",
+        display: "grid",
+        gridTemplateColumns: "1fr 1fr",
+        gap: 7
+      }
+    }, /*#__PURE__*/React.createElement(Btn, {
+      onClick: e => {
+        e.stopPropagation();
+        whatsapp(car);
+      },
+      small: true,
+      variant: "success",
+      style: {
+        justifyContent: "center"
+      }
+    }, "\uD83D\uDCAC WhatsApp"), /*#__PURE__*/React.createElement(Btn, {
+      onClick: e => {
+        e.stopPropagation();
+        setDetail(car);
+      },
+      small: true,
+      variant: "ghost",
+      style: {
+        justifyContent: "center"
+      }
+    }, "Ver detalhes"))));
+  }
+  function DetailModal() {
+    if (!detail) return null;
+    const fotos = detail.fotos || [];
+    const st = catalogoStatusLabel(detail);
+    const facts = [detail.year, detail.km ? Number(detail.km).toLocaleString("pt-BR") + " km" : "", detail.color || "", detail.combustivel || ""].filter(Boolean);
+    const perfis = catalogoPerfisDoCarro(detail);
+    const ficha = (detail.fichaTecnica || "").trim();
+    const desc = (detail.descricaoAnuncio || "").trim();
+    const faq = catalogoFaqItems(detail);
+    return /*#__PURE__*/React.createElement(Modal, {
+      title: "Catálogo do Veículo",
+      onClose: () => setDetail(null),
+      width: 840
+    }, /*#__PURE__*/React.createElement("div", {
+      style: {
+        display: "flex",
+        flexDirection: "column",
+        gap: 14
+      }
+    }, fotos.length > 0 ? /*#__PURE__*/React.createElement("div", {
+      style: {
+        display: "grid",
+        gridTemplateColumns: "repeat(auto-fit,minmax(150px,1fr))",
+        gap: 8
+      }
+    }, fotos.slice(0, 8).map((f, idx) => /*#__PURE__*/React.createElement("img", {
+      key: idx,
+      src: f.url,
+      alt: "",
+      style: {
+        width: "100%",
+        aspectRatio: "4/3",
+        objectFit: "cover",
+        borderRadius: 8,
+        border: `1px solid ${C.border}`,
+        display: "block"
+      }
+    }))) : /*#__PURE__*/React.createElement("div", {
+      style: {
+        background: C.bg,
+        border: `1px solid ${C.border}`,
+        borderRadius: 10,
+        padding: "28px 12px",
+        textAlign: "center",
+        color: C.textMuted
+      }
+    }, "Fotos ainda não adicionadas"), /*#__PURE__*/React.createElement("div", {
+      style: {
+        display: "flex",
+        gap: 10,
+        alignItems: "flex-start",
+        justifyContent: "space-between",
+        flexWrap: "wrap"
+      }
+    }, /*#__PURE__*/React.createElement("div", {
+      style: {
+        minWidth: 0
+      }
+    }, /*#__PURE__*/React.createElement(Badge, {
+      label: st.label,
+      col: st.col
+    }), /*#__PURE__*/React.createElement("div", {
+      style: {
+        color: C.red,
+        fontSize: 11,
+        fontWeight: 800,
+        marginTop: 10
+      }
+    }, detail.marca || "Premier"), /*#__PURE__*/React.createElement("div", {
+      style: {
+        color: C.text,
+        fontSize: 22,
+        fontWeight: 900,
+        lineHeight: 1.15,
+        marginTop: 2
+      }
+    }, detail.name || "Veículo disponível"), /*#__PURE__*/React.createElement("div", {
+      style: {
+        color: C.textMuted,
+        fontSize: 12,
+        marginTop: 6
+      }
+    }, facts.join(" · ") || "Dados sob consulta"), perfis.length > 0 && /*#__PURE__*/React.createElement("div", {
+      style: {
+        display: "flex",
+        gap: 6,
+        flexWrap: "wrap",
+        marginTop: 9
+      }
+    }, perfis.slice(0, 3).map(p => /*#__PURE__*/React.createElement(Badge, {
+      key: p,
+      label: p,
+      col: C.info
+    })))), /*#__PURE__*/React.createElement("div", {
+      style: {
+        textAlign: "right"
+      }
+    }, /*#__PURE__*/React.createElement("div", {
+      style: {
+        color: detail.precoVenda ? C.success : C.textMuted,
+        fontSize: 22,
+        fontWeight: 900
+      }
+    }, detail.precoVenda ? fmt(detail.precoVenda) : "Consulte"), /*#__PURE__*/React.createElement("div", {
+      style: {
+        color: C.textMuted,
+        fontSize: 11,
+        marginTop: 3
+      }
+    }, detail.loja || "Premier Multimarcas"))), detail.opcionais && detail.opcionais.length > 0 && /*#__PURE__*/React.createElement("div", {
+      style: {
+        display: "flex",
+        gap: 6,
+        flexWrap: "wrap"
+      }
+    }, detail.opcionais.map(op => /*#__PURE__*/React.createElement("span", {
+      key: op,
+      style: {
+        background: C.bg,
+        border: `1px solid ${C.border}`,
+        color: C.text,
+        borderRadius: 14,
+        padding: "4px 9px",
+        fontSize: 11,
+        fontWeight: 700
+      }
+    }, op))), desc && /*#__PURE__*/React.createElement("div", {
+      style: {
+        background: C.success + "10",
+        border: `1px solid ${C.success}33`,
+        borderRadius: 10,
+        padding: "11px 12px",
+        color: C.text,
+        fontSize: 13,
+        lineHeight: 1.55,
+        whiteSpace: "pre-wrap"
+      }
+    }, desc), ficha && /*#__PURE__*/React.createElement("div", {
+      style: {
+        background: C.bg,
+        border: `1px solid ${C.border}`,
+        borderRadius: 10,
+        padding: "11px 12px"
+      }
+    }, /*#__PURE__*/React.createElement("div", {
+      style: {
+        color: C.red,
+        fontSize: 11,
+        fontWeight: 800,
+        marginBottom: 7,
+        letterSpacing: 1
+      }
+    }, "FICHA TÉCNICA"), /*#__PURE__*/React.createElement("div", {
+      style: {
+        color: C.text,
+        fontSize: 12,
+        lineHeight: 1.55,
+        whiteSpace: "pre-wrap"
+      }
+    }, ficha)), faq.length > 0 && /*#__PURE__*/React.createElement("div", {
+      style: {
+        background: C.bg,
+        border: `1px solid ${C.border}`,
+        borderRadius: 10,
+        padding: "11px 12px"
+      }
+    }, /*#__PURE__*/React.createElement("div", {
+      style: {
+        color: C.red,
+        fontSize: 11,
+        fontWeight: 800,
+        marginBottom: 8,
+        letterSpacing: 1
+      }
+    }, "PERGUNTAS FREQUENTES"), /*#__PURE__*/React.createElement("div", {
+      style: {
+        display: "flex",
+        flexDirection: "column",
+        gap: 8
+      }
+    }, faq.map((item, idx) => /*#__PURE__*/React.createElement("div", {
+      key: idx,
+      style: {
+        borderBottom: idx === faq.length - 1 ? "none" : `1px solid ${C.border}`,
+        paddingBottom: idx === faq.length - 1 ? 0 : 8
+      }
+    }, /*#__PURE__*/React.createElement("div", {
+      style: {
+        color: C.text,
+        fontSize: 12,
+        fontWeight: 900,
+        lineHeight: 1.35,
+        marginBottom: item.resposta ? 3 : 0
+      }
+    }, item.pergunta), item.resposta && /*#__PURE__*/React.createElement("div", {
+      style: {
+        color: C.textMuted,
+        fontSize: 12,
+        lineHeight: 1.45,
+        whiteSpace: "pre-wrap"
+      }
+    }, item.resposta))))), /*#__PURE__*/React.createElement(Btn, {
+      onClick: () => whatsapp(detail),
+      variant: "success",
+      style: {
+        justifyContent: "center"
+      }
+    }, "\uD83D\uDCAC Chamar no WhatsApp")));
+  }
+  return /*#__PURE__*/React.createElement("div", {
+    style: {
+      minHeight: "100vh",
+      background: C.bg,
+      color: C.text,
+      paddingBottom: safeBottom(24)
+    }
+  }, showIntro && /*#__PURE__*/React.createElement(CatalogIntro, null), /*#__PURE__*/React.createElement("header", {
+    style: {
+      background: C.card,
+      borderBottom: `1px solid ${C.border}`,
+      padding: "10px 14px",
+      paddingTop: "calc(10px + env(safe-area-inset-top, 0px))",
+      position: "sticky",
+      top: 0,
+      zIndex: 120,
+      display: "flex",
+      alignItems: "center",
+      gap: 10
+    }
+  }, /*#__PURE__*/React.createElement("img", {
+    src: LOGO,
+    alt: "Premier",
+    style: {
+      height: 34,
+      objectFit: "contain",
+      flexShrink: 0
+    }
+  }), /*#__PURE__*/React.createElement("div", {
+    style: {
+      flex: 1,
+      minWidth: 0
+    }
+  }, /*#__PURE__*/React.createElement("div", {
+    style: {
+      color: C.text,
+      fontSize: 14,
+      fontWeight: 900,
+      whiteSpace: "nowrap",
+      overflow: "hidden",
+      textOverflow: "ellipsis"
+    }
+  }, "Catálogo Premier"), /*#__PURE__*/React.createElement("div", {
+    style: {
+      color: C.textMuted,
+      fontSize: 10
+    }
+  }, "Veículos disponíveis para atendimento", colaborador ? ` · Atendimento: ${colaborador.name || colaborador.username}` : "")), /*#__PURE__*/React.createElement(Btn, {
+    onClick: copiarLink,
+    small: true,
+    variant: colaborador ? "success" : "ghost"
+  }, colaborador ? "Link único" : "Copiar link"), /*#__PURE__*/React.createElement(Btn, {
+    onClick: onBack,
+    small: true,
+    variant: user ? "primary" : "ghost"
+  }, user ? "Voltar" : "Sistema")), /*#__PURE__*/React.createElement("main", {
+    style: {
+      padding: "14px",
+      maxWidth: 1180,
+      margin: "0 auto",
+      width: "100%"
+    }
+  }, /*#__PURE__*/React.createElement("section", {
+    style: {
+      display: "grid",
+      gridTemplateColumns: "repeat(auto-fit,minmax(120px,1fr))",
+      gap: 8,
+      marginBottom: 12
+    }
+  }, stats.map(x => /*#__PURE__*/React.createElement("div", {
+    key: x.l,
+    style: {
+      background: C.card,
+      border: `1px solid ${x.c}33`,
+      borderRadius: 9,
+      padding: "10px 11px"
+    }
+  }, /*#__PURE__*/React.createElement("div", {
+    style: {
+      color: x.c,
+      fontSize: 22,
+      fontWeight: 900,
+      lineHeight: 1
+    }
+  }, x.v), /*#__PURE__*/React.createElement("div", {
+    style: {
+      color: C.textMuted,
+      fontSize: 10,
+      marginTop: 4
+    }
+  }, x.l)))), colaborador && !colaboradorNumero && /*#__PURE__*/React.createElement("div", {
+    style: {
+      background: C.warning + "12",
+      border: `1px solid ${C.warning}44`,
+      borderRadius: 9,
+      padding: "9px 11px",
+      color: C.warning,
+      fontSize: 11,
+      fontWeight: 700,
+      marginBottom: 12
+    }
+  }, "Este link está vinculado a ", colaborador.name || colaborador.username, ", mas ainda não tem WhatsApp cadastrado no usuário."), /*#__PURE__*/React.createElement("section", {
+    style: {
+      background: C.card,
+      border: `1px solid ${C.border}`,
+      borderRadius: 10,
+      padding: 11,
+      display: "grid",
+      gridTemplateColumns: "repeat(auto-fit,minmax(150px,1fr))",
+      gap: 8,
+      marginBottom: 13
+    }
+  }, /*#__PURE__*/React.createElement(Inp, {
+    label: "Buscar",
+    value: search,
+    onChange: setSearch,
+    placeholder: "Modelo, marca, ano ou cor",
+    small: true
+  }), /*#__PURE__*/React.createElement(Sel, {
+    label: "Situação",
+    value: status,
+    onChange: setStatus,
+    options: [{
+      v: "Todos",
+      l: "Todos"
+    }, {
+      v: "Prontos",
+      l: "Prontos"
+    }, {
+      v: "Preparacao",
+      l: "Preparação"
+    }, {
+      v: "EmBreve",
+      l: "Em breve"
+    }],
+    small: true
+  }), /*#__PURE__*/React.createElement(Inp, {
+    label: "Preço sugerido até",
+    value: precoMax,
+    onChange: setPrecoMax,
+    type: "number",
+    placeholder: "Ex: 80000",
+    small: true
+  }), /*#__PURE__*/React.createElement(Sel, {
+    label: "Perfil do carro",
+    value: perfil,
+    onChange: setPerfil,
+    options: ["Todos", ...PERFIS_CATALOGO],
+    small: true
+  })), filtrados.length === 0 ? /*#__PURE__*/React.createElement("div", {
+    style: {
+      background: C.card,
+      border: `1px solid ${C.border}`,
+      borderRadius: 10,
+      padding: "34px 14px",
+      textAlign: "center",
+      color: C.textMuted
+    }
+  }, "Nenhum veículo disponível com estes filtros.") : /*#__PURE__*/React.createElement("section", {
+    style: {
+      display: "grid",
+      gridTemplateColumns: "repeat(auto-fit,minmax(245px,1fr))",
+      gap: 12,
+      animation: "catalogCardsIn .55s ease both",
+      animationDelay: showIntro ? "1.9s" : "0s"
+    }
+  }, filtrados.map(car => /*#__PURE__*/React.createElement(CatalogCard, {
+    key: car.id,
+    car: car
+  })))), detail && /*#__PURE__*/React.createElement(DetailModal, null));
 }
 
 // ═══ ADD CAR FORM ════════════════════════════════════════════════
@@ -8689,7 +9975,9 @@ function Dashboard({
   onOpenLogistica,
   onOpenPrestadores,
   onOpenPendencias,
+  onOpenPecasPendentes,
   onOpenPrepCategorias,
+  onOpenCatalogo,
   metaDiaria = 3,
   onChangeMetaDiaria,
   onRefresh,
@@ -8703,6 +9991,7 @@ function Dashboard({
   const totalVendidos = cars.filter(c => c.status === "Vendido").length;
   const noPrestador = cars.filter(c => c.prestadorAtual && c.prestadorAtual !== "Sem prestador").length;
   const prestadorVencidos = cars.filter(c => c.prestadorAtual && c.prestadorAtual !== "Sem prestador" && c.prestadorPrazo && daysUntil(c.prestadorPrazo) < 0).length;
+  const pecasPendentesCount = cars.filter(c => c.status !== "Vendido").reduce((s, c) => s + (pendenciasDoCarro(c).pecasAComprar.length + pendenciasDoCarro(c).pecasCompradas.length), 0);
   const hojeBR = new Date().toLocaleDateString("pt-BR");
   const metaNum = Math.max(0, Number(metaDiaria) || 0);
   const liberadosHoje = cars.filter(c => c.status !== "Vendido" && ((c.aprovadoEm || "").startsWith(hojeBR) || (c.historico || []).some(h => (h.em || "").startsWith(hojeBR) && ((h.acao || "").includes("Aprovado") || (h.acao || "").includes("Pronto para Venda"))))).length;
@@ -8754,6 +10043,14 @@ function Dashboard({
     icon: "📌",
     label: "Centro de Pendências",
     fn: onOpenPendencias
+  }, {
+    icon: "🔩",
+    label: `Peças Pendentes${pecasPendentesCount ? " (" + pecasPendentesCount + ")" : ""}`,
+    fn: onOpenPecasPendentes
+  }, {
+    icon: "🛒",
+    label: "Catálogo Público",
+    fn: onOpenCatalogo
   }, {
     icon: "🔧",
     label: "Logística / Prestadores",
@@ -9293,8 +10590,9 @@ function App() {
   const [metaDiaria, setMetaDiaria] = useState(3);
   const [despesasFixas, setDespesasFixas] = useState([]);
   const [logs, setLogs] = useState([]);
-  const [view, setView] = useState("dashboard");
+  const [view, setView] = useState(() => isCatalogRoute() ? "catalogo" : "dashboard");
   const [selectedCar, setSelectedCar] = useState(null);
+  const [carDetailTab, setCarDetailTab] = useState("overview");
   const [darkMode, setDarkMode] = useState(true);
   const [showSuppliers, setShowSuppliers] = useState(false);
   const [showPrestadores, setShowPrestadores] = useState(false);
@@ -9306,6 +10604,7 @@ function App() {
   const [showPesquisaPlaca, setShowPesquisaPlaca] = useState(false);
   const [showLogistica, setShowLogistica] = useState(false);
   const [showPendencias, setShowPendencias] = useState(false);
+  const [showPecasPendentes, setShowPecasPendentes] = useState(false);
   const [showPrepCategorias, setShowPrepCategorias] = useState(false);
   const [deepLinkDone, setDeepLinkDone] = useState(false);
   applyPrepCategoriasConfig(prepCategorias);
@@ -9353,8 +10652,7 @@ function App() {
       if (cid) {
         const alvo = cars.find(c => String(c.id) === String(cid));
         if (alvo) {
-          setSelectedCar(alvo);
-          setView("carDetail");
+          openCar(alvo);
           pushNotif("🏷️ Ficha aberta pela tag", "info");
         } else {
           pushNotif("Veículo da tag não encontrado", "warning");
@@ -9462,6 +10760,7 @@ function App() {
     setUser(null);
     setView("dashboard");
     setSelectedCar(null);
+    setCarDetailTab("overview");
     try { localStorage.removeItem("premier_session"); } catch(e) {}
   }
   async function toggleDark() {
@@ -9473,18 +10772,39 @@ function App() {
     loadAll();
     pushNotif("🔄 Dados atualizados", "success");
   }
+  function openCar(car, tab = "overview") {
+    setSelectedCar(car);
+    setCarDetailTab(tab || "overview");
+    setView("carDetail");
+  }
+  function openCatalogo() {
+    setCatalogRoute(true);
+    setView("catalogo");
+  }
+  function closeCatalogo() {
+    setCatalogRoute(false);
+    setView("dashboard");
+  }
   function clearLogs() {
     setLogs([]);
     sbSet("activity_log", []).catch(() => {});
   }
+  const commonProps = {
+    key: renderKey
+  };
   if (!ready) return /*#__PURE__*/React.createElement(LoadingScreen, null);
+  if (view === "catalogo") return /*#__PURE__*/React.createElement("div", commonProps, /*#__PURE__*/React.createElement(CatalogoPublico, {
+    cars: cars,
+    users: users,
+    user: user,
+    onBack: closeCatalogo
+  }), /*#__PURE__*/React.createElement(NotifToasts, {
+    notifs: notifs
+  }));
   if (!user) return /*#__PURE__*/React.createElement(LoginScreen, {
     onLogin: login,
     users: users
   });
-  const commonProps = {
-    key: renderKey
-  };
   if (view === "addCar") return /*#__PURE__*/React.createElement("div", commonProps, /*#__PURE__*/React.createElement(AddCarForm, {
     user: user,
     onBack: () => setView("dashboard"),
@@ -9497,8 +10817,7 @@ function App() {
         return;
       }
       saveCar(car);
-      setSelectedCar(car);
-      setView("carDetail");
+      openCar(car);
       pushNotif(`🚗 ${car.marca || ""} ${car.name} cadastrado!`, "success");
       pushLog(`Veículo cadastrado: ${car.marca || ""} ${car.name} (${car.plate})`, user.name, "success");
     }
@@ -9510,9 +10829,11 @@ function App() {
     user: user,
     suppliers: suppliers,
     prestadores: prestadores,
+    initialTab: carDetailTab,
     onBack: () => {
       setView("dashboard");
       setSelectedCar(null);
+      setCarDetailTab("overview");
     },
     onSave: updated => {
       saveCar(updated);
@@ -9529,6 +10850,7 @@ function App() {
       removeCar(id);
       setView("dashboard");
       setSelectedCar(null);
+      setCarDetailTab("overview");
       pushNotif("🗑 Veículo removido", "warning");
       if (car) pushLog(`Veículo removido: ${car.marca || ""} ${car.name}`, user.name, "warning");
     }
@@ -9546,10 +10868,7 @@ function App() {
   if (view === "garantias") return /*#__PURE__*/React.createElement("div", commonProps, /*#__PURE__*/React.createElement(GarantiasScreen, {
     cars: cars,
     onBack: () => setView("dashboard"),
-    onSelectCar: car => {
-      setSelectedCar(car);
-      setView("carDetail");
-    }
+    onSelectCar: car => openCar(car)
   }), /*#__PURE__*/React.createElement(NotifToasts, {
     notifs: notifs
   }));
@@ -9563,10 +10882,7 @@ function App() {
     onToggleDark: toggleDark,
     onLogout: logout,
     onRefresh: handleRefresh,
-    onSelectCar: car => {
-      setSelectedCar(car);
-      setView("carDetail");
-    },
+    onSelectCar: car => openCar(car),
     onAddCar: () => setView("addCar"),
     onOpenSuppliers: () => setShowSuppliers(true),
     onOpenUsers: () => setShowUsers(true),
@@ -9579,7 +10895,9 @@ function App() {
     onOpenLogistica: () => setShowLogistica(true),
     onOpenPrestadores: () => setShowPrestadores(true),
     onOpenPendencias: () => setShowPendencias(true),
+    onOpenPecasPendentes: () => setShowPecasPendentes(true),
     onOpenPrepCategorias: () => setShowPrepCategorias(true),
+    onOpenCatalogo: openCatalogo,
     metaDiaria: metaDiaria,
     onChangeMetaDiaria: saveMetaDiaria
   }), showSuppliers && CAN.suppliers(user.role) && /*#__PURE__*/React.createElement(SuppliersModal, {
@@ -9617,17 +10935,26 @@ function App() {
     onClose: () => setShowDespesas(false)
   }), showPesquisaPlaca && /*#__PURE__*/React.createElement(PesquisaPlacaModal, {
     cars: cars,
-    onSelectCar: car => { setSelectedCar(car); setView("carDetail"); setShowPesquisaPlaca(false); },
+    onSelectCar: car => { openCar(car); setShowPesquisaPlaca(false); },
     onClose: () => setShowPesquisaPlaca(false)
   }), showLogistica && /*#__PURE__*/React.createElement(LogisticaModal, {
     cars: cars,
     prestadores: prestadores,
-    onSelectCar: car => { setSelectedCar(car); setView("carDetail"); setShowLogistica(false); },
+    onSelectCar: car => { openCar(car); setShowLogistica(false); },
     onClose: () => setShowLogistica(false)
   }), showPendencias && /*#__PURE__*/React.createElement(CentroPendenciasModal, {
     cars: cars,
-    onSelectCar: car => { setSelectedCar(car); setView("carDetail"); setShowPendencias(false); },
+    onSelectCar: car => { openCar(car); setShowPendencias(false); },
     onClose: () => setShowPendencias(false)
+  }), showPecasPendentes && /*#__PURE__*/React.createElement(PecasPendentesModal, {
+    cars: cars,
+    user: user,
+    onSelectCar: (car, tab) => { openCar(car, tab || "pecas"); setShowPecasPendentes(false); },
+    onUpdateCar: updated => {
+      saveCar(updated);
+      if (selectedCar && selectedCar.id === updated.id) setSelectedCar(updated);
+    },
+    onClose: () => setShowPecasPendentes(false)
   }), showNotifs && /*#__PURE__*/React.createElement(NotificacoesModal, {
     logs: logs,
     user: user,
