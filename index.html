@@ -637,6 +637,20 @@ function catalogoWhatsappUrl(car, colaborador) {
   const text = encodeURIComponent(catalogoShareText(car));
   return numero ? `https://wa.me/${numero}?text=${text}` : `https://wa.me/?text=${text}`;
 }
+function catalogoTrackingPayload(car, colaborador) {
+  const preco = Number(car && car.precoVenda) || 0;
+  const payload = {
+    content_name: tituloCarro(car),
+    content_category: catalogoPerfilPrincipal(car),
+    status_catalogo: catalogoStatusLabel(car).label,
+    vendedor: catalogoColaboradorSlug(colaborador) || "catalogo-geral"
+  };
+  if (preco > 0) {
+    payload.value = preco;
+    payload.currency = "BRL";
+  }
+  return payload;
+}
 
 // ═══ SUPABASE ═══════════════════════════════════════════════════
 function getSB() {
@@ -8330,8 +8344,22 @@ function CatalogoPublico({
     const isLocalFile = /^file:/i.test(link);
     navigator.clipboard.writeText(link).then(() => pushNotif(isLocalFile ? "Link local copiado. Para cliente abrir no celular, publique o catálogo em HTTPS." : colaborador ? "Link único do catálogo copiado" : "Link do catálogo copiado", isLocalFile ? "warning" : "success")).catch(() => pushNotif("Não foi possível copiar o link", "error"));
   }
+  function trackCatalogo(evento, car) {
+    const payload = catalogoTrackingPayload(car, colaborador);
+    try {
+      if (window.fbq) window.fbq("track", evento, payload);
+    } catch (e) {}
+    if (evento === "Lead") {
+      pushLog(`Lead do catálogo pelo WhatsApp: ${payload.content_name} (${payload.vendedor})`, "Catálogo público", "success", "todos");
+    }
+  }
+  function openCatalogDetail(car) {
+    trackCatalogo("ViewContent", car);
+    setDetail(car);
+  }
   function whatsapp(car) {
-    if (!colaboradorNumero) pushNotif("Cadastre o WhatsApp do colaborador para direcionar o cliente.", "warning");
+    trackCatalogo("Lead", car);
+    if (!colaboradorNumero) pushNotif(canManageCatalogo ? "Cadastre o WhatsApp do colaborador para direcionar o cliente." : "WhatsApp do atendimento indisponível no momento.", "warning");
     window.open(catalogoWhatsappUrl(car, colaborador), "_blank");
   }
   function CatalogIntro() {
@@ -8496,15 +8524,53 @@ function CatalogoPublico({
   function CatalogCard({
     car
   }) {
-    const foto = car.fotos && car.fotos.length > 0 ? car.fotos[0].url : null;
+    const fotos = (car.fotos || []).filter(f => f && f.url);
+    const [fotoIndex, setFotoIndex] = useState(0);
+    const swipeStartRef = useRef(null);
+    const suppressOpenRef = useRef(false);
+    const fotoAtual = fotos.length > 0 ? fotos[Math.min(fotoIndex, fotos.length - 1)] : null;
+    const foto = fotoAtual ? fotoAtual.url : null;
     const st = catalogoStatusLabel(car);
     const facts = [car.year, car.km ? Number(car.km).toLocaleString("pt-BR") + " km" : "", car.color || "", car.combustivel || ""].filter(Boolean);
     const opcionais = (car.opcionais || []).slice(0, 5);
     const perfilPrincipal = catalogoPerfilPrincipal(car);
     const desc = (car.descricaoAnuncio || "").trim();
     const faqCount = catalogoFaqItems(car).length;
+    const hasCarousel = fotos.length > 1;
+    const goFoto = (dir, e) => {
+      if (e) {
+        e.preventDefault();
+        e.stopPropagation();
+      }
+      if (!hasCarousel) return;
+      setFotoIndex(i => (i + dir + fotos.length) % fotos.length);
+    };
+    const touchStart = e => {
+      if (!hasCarousel) return;
+      swipeStartRef.current = e.touches && e.touches[0] ? e.touches[0].clientX : null;
+    };
+    const touchEnd = e => {
+      if (!hasCarousel || swipeStartRef.current === null) return;
+      const end = e.changedTouches && e.changedTouches[0] ? e.changedTouches[0].clientX : null;
+      if (end === null) return;
+      const delta = end - swipeStartRef.current;
+      swipeStartRef.current = null;
+      if (Math.abs(delta) > 38) {
+        suppressOpenRef.current = true;
+        setTimeout(() => {
+          suppressOpenRef.current = false;
+        }, 220);
+        goFoto(delta < 0 ? 1 : -1, e);
+      }
+    };
     return /*#__PURE__*/React.createElement("article", {
-      onClick: () => setDetail(car),
+      onClick: () => {
+        if (suppressOpenRef.current) {
+          suppressOpenRef.current = false;
+          return;
+        }
+        openCatalogDetail(car);
+      },
       style: {
         background: C.card,
         border: `1px solid ${C.border}`,
@@ -8521,7 +8587,15 @@ function CatalogoPublico({
         position: "relative",
         aspectRatio: "4/3",
         background: C.bg,
-        overflow: "hidden"
+        overflow: "hidden",
+        touchAction: "pan-y"
+      }
+    }, /*#__PURE__*/React.createElement("div", {
+      onTouchStart: touchStart,
+      onTouchEnd: touchEnd,
+      style: {
+        width: "100%",
+        height: "100%"
       }
     }, foto ? /*#__PURE__*/React.createElement("img", {
       src: foto,
@@ -8541,7 +8615,85 @@ function CatalogoPublico({
         color: C.textDim,
         fontSize: 44
       }
-    }, "\uD83D\uDE97"), /*#__PURE__*/React.createElement("div", {
+    }, "\uD83D\uDE97")), hasCarousel && /*#__PURE__*/React.createElement(React.Fragment, null, /*#__PURE__*/React.createElement("button", {
+      type: "button",
+      onClick: e => goFoto(-1, e),
+      "aria-label": "Foto anterior",
+      style: {
+        position: "absolute",
+        left: 8,
+        top: "50%",
+        transform: "translateY(-50%)",
+        width: 34,
+        height: 34,
+        borderRadius: "50%",
+        border: `1px solid ${C.border}`,
+        background: "#0009",
+        color: "#fff",
+        fontSize: 20,
+        fontWeight: 900,
+        lineHeight: "30px",
+        display: "flex",
+        alignItems: "center",
+        justifyContent: "center",
+        cursor: "pointer",
+        zIndex: 3
+      }
+    }, "\u2039"), /*#__PURE__*/React.createElement("button", {
+      type: "button",
+      onClick: e => goFoto(1, e),
+      "aria-label": "Próxima foto",
+      style: {
+        position: "absolute",
+        right: 8,
+        top: "50%",
+        transform: "translateY(-50%)",
+        width: 34,
+        height: 34,
+        borderRadius: "50%",
+        border: `1px solid ${C.border}`,
+        background: "#0009",
+        color: "#fff",
+        fontSize: 20,
+        fontWeight: 900,
+        lineHeight: "30px",
+        display: "flex",
+        alignItems: "center",
+        justifyContent: "center",
+        cursor: "pointer",
+        zIndex: 3
+      }
+    }, "\u203A"), /*#__PURE__*/React.createElement("div", {
+      style: {
+        position: "absolute",
+        left: 0,
+        right: 0,
+        bottom: 8,
+        display: "flex",
+        justifyContent: "center",
+        gap: 5,
+        zIndex: 3
+      }
+    }, fotos.slice(0, 8).map((_, idx) => /*#__PURE__*/React.createElement("button", {
+      key: idx,
+      type: "button",
+      onClick: e => {
+        e.preventDefault();
+        e.stopPropagation();
+        setFotoIndex(idx);
+      },
+      "aria-label": `Ir para foto ${idx + 1}`,
+      style: {
+        width: idx === Math.min(fotoIndex, fotos.length - 1) ? 18 : 7,
+        height: 7,
+        borderRadius: 99,
+        border: "none",
+        padding: 0,
+        background: idx === Math.min(fotoIndex, fotos.length - 1) ? "#fff" : "#FFFFFF88",
+        boxShadow: "0 1px 4px #0008",
+        cursor: "pointer"
+      }
+    })))), /*#__PURE__*/React.createElement("div", {
       style: {
         position: "absolute",
         top: 8,
@@ -8650,7 +8802,7 @@ function CatalogoPublico({
     }, "\uD83D\uDCAC WhatsApp"), /*#__PURE__*/React.createElement(Btn, {
       onClick: e => {
         e.stopPropagation();
-        setDetail(car);
+        openCatalogDetail(car);
       },
       small: true,
       variant: "ghost",
