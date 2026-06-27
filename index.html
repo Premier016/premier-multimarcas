@@ -628,7 +628,7 @@ function catalogoShareText(car) {
   const desc = (car.descricaoAnuncio || "").trim();
   const ficha = (car.fichaTecnica || "").trim();
   const faq = catalogoFaqShareText(car);
-  return `${car.marca || ""} ${car.name || ""} ${car.year || ""}\nLoja: ${car.loja || "Premier Multimarcas"}\nPerfil: ${catalogoPerfilPrincipal(car)}\nKM: ${car.km ? Number(car.km).toLocaleString("pt-BR") + " km" : "-"}\nCor: ${car.color || "-"}\nCombustivel: ${car.combustivel || "-"}\nOpcionais: ${opcionais || "-"}\nValor: ${car.precoVenda ? "R$ " + Number(car.precoVenda).toLocaleString("pt-BR", {
+  return `${car.marca || ""} ${car.name || ""} ${car.year || ""}\nPerfil: ${catalogoPerfilPrincipal(car)}\nKM: ${car.km ? Number(car.km).toLocaleString("pt-BR") + " km" : "-"}\nCor: ${car.color || "-"}\nCombustivel: ${car.combustivel || "-"}\nOpcionais: ${opcionais || "-"}\nValor: ${car.precoVenda ? "R$ " + Number(car.precoVenda).toLocaleString("pt-BR", {
     minimumFractionDigits: 2
   }) : "Consulte"}${ficha ? `\n\nFicha técnica:\n${ficha}` : ""}${desc ? `\n\n${desc}` : ""}${faq ? `\n\nPerguntas frequentes:\n${faq}` : ""}\n\nTenho interesse nesse veículo.`;
 }
@@ -8291,6 +8291,7 @@ function CatalogoPublico({
   const budget = Number(String(precoMax || "").replace(/\D/g, "")) || 0;
   const colaborador = findCatalogoColaborador(users, user);
   const colaboradorNumero = catalogoWhatsappNumber(colaborador);
+  const canManageCatalogo = !!user;
   const disponiveis = (cars || []).filter(isCarDisponivelCatalogo);
   const filtrados = disponiveis.filter(car => {
     const q = search.toLowerCase().trim();
@@ -8326,7 +8327,8 @@ function CatalogoPublico({
   }];
   function copiarLink() {
     const link = catalogoPublicoUrl(colaborador);
-    navigator.clipboard.writeText(link).then(() => pushNotif(colaborador ? "Link único do catálogo copiado" : "Link do catálogo copiado", "success")).catch(() => pushNotif("Não foi possível copiar o link", "error"));
+    const isLocalFile = /^file:/i.test(link);
+    navigator.clipboard.writeText(link).then(() => pushNotif(isLocalFile ? "Link local copiado. Para cliente abrir no celular, publique o catálogo em HTTPS." : colaborador ? "Link único do catálogo copiado" : "Link do catálogo copiado", isLocalFile ? "warning" : "success")).catch(() => pushNotif("Não foi possível copiar o link", "error"));
   }
   function whatsapp(car) {
     if (!colaboradorNumero) pushNotif("Cadastre o WhatsApp do colaborador para direcionar o cliente.", "warning");
@@ -8760,7 +8762,7 @@ function CatalogoPublico({
         fontSize: 22,
         fontWeight: 900
       }
-    }, detail.precoVenda ? fmt(detail.precoVenda) : "Consulte"), /*#__PURE__*/React.createElement("div", {
+    }, detail.precoVenda ? fmt(detail.precoVenda) : "Consulte"), canManageCatalogo && /*#__PURE__*/React.createElement("div", {
       style: {
         color: C.textMuted,
         fontSize: 11,
@@ -8913,15 +8915,15 @@ function CatalogoPublico({
       color: C.textMuted,
       fontSize: 10
     }
-  }, "Veículos disponíveis para atendimento", colaborador ? ` · Atendimento: ${colaborador.name || colaborador.username}` : "")), /*#__PURE__*/React.createElement(Btn, {
+  }, "Veículos disponíveis para atendimento", colaborador ? ` · Atendimento: ${colaborador.name || colaborador.username}` : "")), canManageCatalogo && /*#__PURE__*/React.createElement(Btn, {
     onClick: copiarLink,
     small: true,
     variant: colaborador ? "success" : "ghost"
-  }, colaborador ? "Link único" : "Copiar link"), /*#__PURE__*/React.createElement(Btn, {
+  }, colaborador ? "Link único" : "Copiar link"), canManageCatalogo && /*#__PURE__*/React.createElement(Btn, {
     onClick: onBack,
     small: true,
     variant: user ? "primary" : "ghost"
-  }, user ? "Voltar" : "Sistema")), /*#__PURE__*/React.createElement("main", {
+  }, "Voltar")), /*#__PURE__*/React.createElement("main", {
     style: {
       padding: "14px",
       maxWidth: 1180,
