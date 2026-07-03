@@ -10620,7 +10620,10 @@ function ModoTVScreen({
   const E = React.createElement;
   const [, setClock] = useState(Date.now());
   const [lastSync, setLastSync] = useState(new Date());
+  const [narracaoAtiva, setNarracaoAtiva] = useState(false);
   const refreshRef = useRef(onRefresh);
+  const narracaoRef = useRef(false);
+  const falasNarradasRef = useRef({});
   useEffect(() => {
     const timer = setInterval(() => setClock(Date.now()), 60000);
     return () => clearInterval(timer);
@@ -10628,6 +10631,10 @@ function ModoTVScreen({
   useEffect(() => {
     refreshRef.current = onRefresh;
   }, [onRefresh]);
+  useEffect(() => {
+    narracaoRef.current = narracaoAtiva;
+    if (!narracaoAtiva && suporteVozTV()) window.speechSynthesis.cancel();
+  }, [narracaoAtiva]);
   useEffect(() => {
     const timer = setInterval(() => {
       if (refreshRef.current) refreshRef.current({
@@ -10757,6 +10764,116 @@ function ModoTVScreen({
     }))
   ].slice(0, 10);
   const movimentosPainel = movimentos.slice(0, 9);
+  const narracaoHash = [
+    prestadoresAtrasados.slice(0, 2).map(x => `${x.car.id}:${x.p.prazoPrestador}`).join("|"),
+    pecasInstalar.slice(0, 2).map(x => `${x.car.id}:${x.peca.id || x.peca.nome}`).join("|"),
+    pecasComprar.slice(0, 1).map(x => `${x.car.id}:${x.peca.id || x.peca.nome}`).join("|"),
+    movimentosPainel.slice(0, 3).map(m => `${m.car.id}:${m.h.id || m.h.em || m.h.acao}`).join("|"),
+    liberadosHoje,
+    metaNum
+  ].join("::");
+  useEffect(() => {
+    if (!narracaoAtiva) return;
+    const timer = setTimeout(() => narrarEventosImportantes(false), 900);
+    return () => clearTimeout(timer);
+  }, [narracaoAtiva, narracaoHash]);
+  function suporteVozTV() {
+    return typeof window !== "undefined" && !!window.speechSynthesis && typeof window.SpeechSynthesisUtterance === "function";
+  }
+  function nomeParaVoz(car) {
+    return (tituloCarro(car) || "veículo").replace(/\s+/g, " ").trim();
+  }
+  function falarTV(texto, chave, ignorarIntervalo = false) {
+    if (!suporteVozTV()) return false;
+    if (!ignorarIntervalo && !narracaoRef.current) return false;
+    const agora = Date.now();
+    const falas = falasNarradasRef.current || {};
+    Object.keys(falas).forEach(k => {
+      if (agora - falas[k] > 10 * 60 * 1000) delete falas[k];
+    });
+    if (!ignorarIntervalo && chave && falas[chave] && agora - falas[chave] < 8 * 60 * 1000) return false;
+    if (chave) falas[chave] = agora;
+    falasNarradasRef.current = falas;
+    const fala = new window.SpeechSynthesisUtterance(texto);
+    fala.lang = "pt-BR";
+    fala.rate = .96;
+    fala.pitch = 1;
+    fala.volume = 1;
+    window.speechSynthesis.speak(fala);
+    return true;
+  }
+  function movimentoImportanteTV(acao = "") {
+    return /pronto para venda|aprovad|liberad|vendid|enviado|sa[ií]da|entrada|instalad|garantia|prestador|checklist/i.test(acao);
+  }
+  function falasImportantesTV() {
+    const falas = [];
+    prestadoresAtrasados.slice(0, 2).forEach(x => {
+      falas.push({
+        key: `prestador-${x.car.id}-${x.p.prazoPrestador}`,
+        texto: `Atenção: ${nomeParaVoz(x.car)} está com ${x.car.prestadorAtual || "prestador"} atrasado há ${Math.abs(x.p.prazoPrestador)} dias. Ação sugerida: cobrar retirada hoje.`
+      });
+    });
+    pecasInstalar.slice(0, 2).forEach(x => {
+      falas.push({
+        key: `peca-instalar-${x.car.id}-${x.peca.id || x.peca.nome}`,
+        texto: `Peça comprada sem instalar no ${nomeParaVoz(x.car)}. Prioridade para instalar ${x.peca.nome || "a peça pendente"}.`
+      });
+    });
+    pecasComprar.slice(0, 1).forEach(x => {
+      falas.push({
+        key: `peca-comprar-${x.car.id}-${x.peca.id || x.peca.nome}`,
+        texto: `Peça ainda precisa ser comprada para ${nomeParaVoz(x.car)}: ${x.peca.nome || "peça pendente"}.`
+      });
+    });
+    criticos.filter(x => x.saude.score < 50 && !x.p.atrasado).slice(0, 1).forEach(x => {
+      falas.push({
+        key: `critico-${x.car.id}-${x.saude.score}`,
+        texto: `${nomeParaVoz(x.car)} está crítico na preparação, com saúde ${x.saude.score}. Próximo passo: ${x.passo}.`
+      });
+    });
+    movimentosPainel.filter(m => movimentoImportanteTV(m.h.acao || "")).slice(0, 2).forEach(m => {
+      falas.push({
+        key: `movimento-${m.car.id}-${m.h.id || m.h.em || m.h.acao}`,
+        texto: `Movimento importante: ${nomeParaVoz(m.car)}. ${m.h.acao || "Atualização registrada"}${m.h.por ? ` por ${m.h.por}` : ""}.`
+      });
+    });
+    if (metaNum > 0) {
+      falas.push({
+        key: `meta-${hojeBR}-${liberadosHoje}-${metaNum}`,
+        texto: `Meta do dia: ${liberadosHoje} de ${metaNum} carros liberados.`
+      });
+    }
+    return falas;
+  }
+  function narrarEventosImportantes(forcar = false) {
+    if (!narracaoRef.current) return;
+    const limite = forcar ? 4 : 2;
+    let faladas = 0;
+    falasImportantesTV().some(f => {
+      if (faladas >= limite) return true;
+      if (falarTV(f.texto, f.key, forcar)) faladas += 1;
+      return false;
+    });
+  }
+  function toggleNarracaoTV() {
+    if (narracaoAtiva) {
+      narracaoRef.current = false;
+      setNarracaoAtiva(false);
+      if (suporteVozTV()) window.speechSynthesis.cancel();
+      return;
+    }
+    if (!suporteVozTV()) {
+      alert("Este navegador não liberou narração por voz.");
+      return;
+    }
+    narracaoRef.current = true;
+    setNarracaoAtiva(true);
+    window.speechSynthesis.cancel();
+    falarTV("Narração do Modo TV ativada. Vou avisar somente prioridades e movimentos importantes.", "narracao-tv-inicio", true);
+    setTimeout(() => {
+      if (narracaoRef.current) narrarEventosImportantes(true);
+    }, 1200);
+  }
   function MiniBadge(label, col) {
     return E("span", {
       style: {
@@ -11203,6 +11320,18 @@ function ModoTVScreen({
       flexShrink: 0
     }
   }, E("button", {
+    onClick: toggleNarracaoTV,
+    title: narracaoAtiva ? "Desligar narração" : "Ligar narração",
+    style: {
+      background: narracaoAtiva ? C.success : C.card,
+      border: narracaoAtiva ? "none" : `1px solid ${C.border}`,
+      borderRadius: 10,
+      color: narracaoAtiva ? "#fff" : C.text,
+      padding: "9px 12px",
+      cursor: "pointer",
+      fontWeight: 900
+    }
+  }, narracaoAtiva ? "🔊 Narração" : "🔇 Narração"), E("button", {
     onClick: onRefresh,
     style: {
       background: C.card,
