@@ -10742,21 +10742,36 @@ function ModoTVScreen({
     v: `${liberadosHoje}/${metaNum}`,
     c: metaNum > 0 && liberadosHoje >= metaNum ? C.success : C.warning
   }];
-  function BadgeTV(label, col) {
+  const prioridadesPainel = criticos.slice(0, 8);
+  const atrasosPainel = prestadoresAtrasados.slice(0, 8);
+  const pecasPainel = [
+    ...pecasInstalar.map(x => ({
+      ...x,
+      acao: "Instalar",
+      col: C.info
+    })),
+    ...pecasComprar.map(x => ({
+      ...x,
+      acao: "Comprar",
+      col: C.warning
+    }))
+  ].slice(0, 10);
+  const movimentosPainel = movimentos.slice(0, 9);
+  function MiniBadge(label, col) {
     return E("span", {
       style: {
-        background: col + "18",
-        border: `1px solid ${col}44`,
-        borderRadius: 8,
+        background: col + "15",
+        border: `1px solid ${col}40`,
+        borderRadius: 7,
         color: col,
-        padding: "4px 8px",
-        fontSize: 11,
+        padding: "2px 7px",
+        fontSize: 10,
         fontWeight: 900,
         whiteSpace: "nowrap"
       }
     }, label);
   }
-  function ProgressBar(pct, col, h = 8) {
+  function ProgressBar(pct, col, h = 5) {
     return E("div", {
       style: {
         height: h,
@@ -10773,42 +10788,83 @@ function ModoTVScreen({
       }
     }));
   }
-  function CarTVCard({
-    item,
-    compact = false
-  }) {
-    const car = item.car;
-    const foto = car.fotos && car.fotos.length > 0 ? car.fotos[0].url : null;
-    const statusCol = ST_COL[car.status] || C.border;
-    const atraso = item.p.atrasado;
-    const borderCol = atraso ? C.error : item.saude.score < 50 ? C.error : item.saude.score < 80 ? C.warning : C.border;
-    return E("button", {
-      onClick: () => onSelectCar && onSelectCar(car),
+  function EmptyTV(text) {
+    return E("div", {
+      style: {
+        color: C.textMuted,
+        fontSize: 12,
+        padding: "18px 8px",
+        textAlign: "center",
+        border: `1px dashed ${C.border}`,
+        borderRadius: 10,
+        background: C.bg
+      }
+    }, text);
+  }
+  function TVPanel(title, accent, count, children) {
+    return E("section", {
       style: {
         background: C.card,
-        border: `1px solid ${borderCol}66`,
+        border: `1px solid ${accent}35`,
         borderRadius: 12,
-        padding: 0,
+        padding: 12,
+        minWidth: 0,
+        height: "calc(100vh - 184px)",
         overflow: "hidden",
-        color: C.text,
-        cursor: "pointer",
-        textAlign: "left",
-        fontFamily: "inherit",
-        boxShadow: atraso ? `0 0 0 1px ${C.error}33, 0 10px 30px #0006` : "0 10px 28px #0005",
-        minHeight: compact ? 122 : 166
+        display: "flex",
+        flexDirection: "column"
       }
     }, E("div", {
       style: {
         display: "flex",
-        minHeight: compact ? 122 : 166
+        justifyContent: "space-between",
+        alignItems: "center",
+        gap: 8,
+        marginBottom: 10,
+        flexShrink: 0
       }
     }, E("div", {
       style: {
-        width: compact ? 96 : 136,
-        flexShrink: 0,
-        background: C.bg,
+        color: accent,
+        fontSize: 12,
+        fontWeight: 950,
+        letterSpacing: .5,
+        whiteSpace: "nowrap",
+        overflow: "hidden",
+        textOverflow: "ellipsis"
+      }
+    }, title), E("div", {
+      style: {
+        color: accent,
+        background: accent + "14",
+        border: `1px solid ${accent}35`,
+        borderRadius: 8,
+        padding: "2px 8px",
+        fontSize: 11,
+        fontWeight: 950,
+        flexShrink: 0
+      }
+    }, count)), E("div", {
+      style: {
+        display: "flex",
+        flexDirection: "column",
+        gap: 8,
+        overflowY: "auto",
+        paddingRight: 2
+      }
+    }, children));
+  }
+  function TVPhoto(car, label, col = C.textDim) {
+    const foto = car && car.fotos && car.fotos.length > 0 ? car.fotos[0].url : null;
+    return E("div", {
+      style: {
+        width: 58,
+        height: 58,
+        borderRadius: 8,
+        overflow: "hidden",
+        background: C.border + "35",
         position: "relative",
-        overflow: "hidden"
+        flexShrink: 0
       }
     }, foto ? E("img", {
       src: foto,
@@ -10821,40 +10877,61 @@ function ModoTVScreen({
       }
     }) : E("div", {
       style: {
-        width: "100%",
         height: "100%",
         display: "flex",
         alignItems: "center",
         justifyContent: "center",
         color: C.textDim,
-        fontSize: compact ? 30 : 42
+        fontSize: 24
       }
-    }, "🚗"), E("div", {
+    }, "🚗"), label ? E("span", {
       style: {
         position: "absolute",
-        left: 7,
-        bottom: 7,
+        left: 3,
+        bottom: 3,
         background: "#000b",
-        borderRadius: 7,
-        padding: "3px 7px",
-        color: dayColor(item.dias),
-        fontSize: 11,
-        fontWeight: 900
+        borderRadius: 5,
+        color: col,
+        padding: "1px 5px",
+        fontSize: 9,
+        fontWeight: 950,
+        maxWidth: 52,
+        overflow: "hidden",
+        textOverflow: "ellipsis",
+        whiteSpace: "nowrap"
       }
-    }, `${item.dias}d`)), E("div", {
+    }, label) : null);
+  }
+  function CarRow(item) {
+    const car = item.car;
+    const statusCol = ST_COL[car.status] || C.border;
+    const borderCol = item.p.atrasado || item.saude.score < 50 ? C.error : item.saude.score < 80 ? C.warning : C.border;
+    return E("button", {
+      key: car.id,
+      onClick: () => onSelectCar && onSelectCar(car),
       style: {
-        flex: 1,
-        minWidth: 0,
-        padding: compact ? "10px 11px" : "13px 14px",
-        display: "flex",
-        flexDirection: "column",
-        gap: 8
+        width: "100%",
+        background: C.bg,
+        border: `1px solid ${borderCol}55`,
+        borderRadius: 10,
+        padding: 8,
+        display: "grid",
+        gridTemplateColumns: "58px minmax(0,1fr)",
+        gap: 9,
+        color: C.text,
+        cursor: "pointer",
+        fontFamily: "inherit",
+        textAlign: "left"
+      }
+    }, TVPhoto(car, `${item.dias}d`, dayColor(item.dias)), E("div", {
+      style: {
+        minWidth: 0
       }
     }, E("div", {
       style: {
         display: "flex",
-        gap: 8,
         justifyContent: "space-between",
+        gap: 7,
         alignItems: "flex-start"
       }
     }, E("div", {
@@ -10864,8 +10941,8 @@ function ModoTVScreen({
     }, E("div", {
       style: {
         color: C.text,
-        fontSize: compact ? 14 : 18,
-        fontWeight: 900,
+        fontSize: 13,
+        fontWeight: 950,
         lineHeight: 1.1,
         whiteSpace: "nowrap",
         overflow: "hidden",
@@ -10874,94 +10951,228 @@ function ModoTVScreen({
     }, tituloCarro(car)), E("div", {
       style: {
         color: C.textMuted,
-        fontSize: compact ? 10 : 12,
-        marginTop: 3,
+        fontSize: 10,
+        marginTop: 2,
         whiteSpace: "nowrap",
         overflow: "hidden",
         textOverflow: "ellipsis"
       }
-    }, car.plate || "Sem placa", " · ", car.loja || "Loja")), BadgeTV(item.saude.score, item.saude.col)), E("div", {
+    }, car.plate || "Sem placa", " · ", car.loja || "Loja")), MiniBadge(item.saude.score, item.saude.col)), E("div", {
       style: {
         display: "flex",
-        gap: 6,
-        flexWrap: "wrap"
+        gap: 5,
+        flexWrap: "wrap",
+        marginTop: 6
       }
-    }, BadgeTV(car.status || "Status", statusCol), item.p.emPrestador && BadgeTV(car.prestadorAtual || "Prestador", item.p.atrasado ? C.error : C.warning), item.p.pecasCompradas.length > 0 && BadgeTV(`${item.p.pecasCompradas.length} peça(s) instalar`, C.info)), E("div", {
+    }, MiniBadge(car.status || "Status", statusCol), item.p.emPrestador && MiniBadge(car.prestadorAtual || "Prestador", item.p.atrasado ? C.error : C.warning)), E("div", {
       style: {
-        marginTop: "auto"
+        marginTop: 7
+      }
+    }, ProgressBar(item.p.prep.pct, item.p.prep.pct === 100 ? C.success : C.info), E("div", {
+      style: {
+        display: "flex",
+        justifyContent: "space-between",
+        gap: 8,
+        marginTop: 4,
+        color: item.p.atrasado || item.saude.score < 80 ? C.error : C.textMuted,
+        fontSize: 10,
+        fontWeight: 900
+      }
+    }, E("span", {
+      style: {
+        overflow: "hidden",
+        textOverflow: "ellipsis",
+        whiteSpace: "nowrap"
+      }
+    }, item.passo), E("span", null, `${item.p.prep.pct}%`)))));
+  }
+  function AtrasoRow(item) {
+    const car = item.car;
+    return E("button", {
+      key: car.id,
+      onClick: () => onSelectCar && onSelectCar(car),
+      style: {
+        width: "100%",
+        background: C.error + "08",
+        border: `1px solid ${C.error}45`,
+        borderRadius: 10,
+        padding: 8,
+        display: "grid",
+        gridTemplateColumns: "58px minmax(0,1fr)",
+        gap: 9,
+        color: C.text,
+        cursor: "pointer",
+        fontFamily: "inherit",
+        textAlign: "left"
+      }
+    }, TVPhoto(car, `${Math.abs(item.p.prazoPrestador)}d`, C.error), E("div", {
+      style: {
+        minWidth: 0
+      }
+    }, E("div", {
+      style: {
+        color: C.error,
+        fontSize: 10,
+        fontWeight: 950,
+        marginBottom: 3
+      }
+    }, `${Math.abs(item.p.prazoPrestador)}D VENCIDO`), E("div", {
+      style: {
+        color: C.text,
+        fontSize: 13,
+        fontWeight: 950,
+        whiteSpace: "nowrap",
+        overflow: "hidden",
+        textOverflow: "ellipsis"
+      }
+    }, tituloCarro(car)), E("div", {
+      style: {
+        color: C.textMuted,
+        fontSize: 11,
+        marginTop: 2,
+        whiteSpace: "nowrap",
+        overflow: "hidden",
+        textOverflow: "ellipsis"
+      }
+    }, car.prestadorAtual || "Prestador", car.prestadorServico ? ` · ${car.prestadorServico}` : "")));
+  }
+  function PecaRow(item, idx) {
+    return E("button", {
+      key: `${item.car.id}-${item.peca.id || item.peca.nome}-${idx}`,
+      onClick: () => onSelectCar && onSelectCar(item.car),
+      style: {
+        width: "100%",
+        background: item.col + "08",
+        border: `1px solid ${item.col}40`,
+        borderRadius: 10,
+        padding: 8,
+        display: "grid",
+        gridTemplateColumns: "58px minmax(0,1fr)",
+        gap: 9,
+        color: C.text,
+        cursor: "pointer",
+        fontFamily: "inherit",
+        textAlign: "left"
+      }
+    }, TVPhoto(item.car, item.acao, item.col), E("div", {
+      style: {
+        minWidth: 0
       }
     }, E("div", {
       style: {
         display: "flex",
         justifyContent: "space-between",
-        color: C.textMuted,
-        fontSize: 11,
-        marginBottom: 5,
         gap: 8
       }
-    }, E("span", null, "Preparação"), E("b", {
+    }, E("span", {
       style: {
-        color: item.p.prep.pct === 100 ? C.success : C.text
+        color: item.col,
+        fontSize: 10,
+        fontWeight: 950
       }
-    }, `${item.p.prep.pct}%`)), ProgressBar(item.p.prep.pct, item.p.prep.pct === 100 ? C.success : C.info)), E("div", {
+    }, item.acao), E("span", {
       style: {
-        color: item.saude.score < 50 ? C.error : item.saude.score < 80 ? C.warning : C.textMuted,
-        fontSize: compact ? 11 : 12,
-        fontWeight: 800,
+        color: C.textMuted,
+        fontSize: 10
+      }
+    }, item.car.plate || "")), E("div", {
+      style: {
+        color: C.text,
+        fontSize: 13,
+        fontWeight: 950,
+        marginTop: 3,
         whiteSpace: "nowrap",
         overflow: "hidden",
         textOverflow: "ellipsis"
       }
-    }, item.passo))));
-  }
-  function Panel(title, children, accent = C.border) {
-    return E("section", {
+    }, tituloCarro(item.car)), E("div", {
       style: {
-        background: C.card,
-        border: `1px solid ${accent}44`,
-        borderRadius: 12,
-        padding: 14,
+        color: C.textMuted,
+        fontSize: 11,
+        marginTop: 2,
+        whiteSpace: "nowrap",
+        overflow: "hidden",
+        textOverflow: "ellipsis"
+      }
+    }, item.peca.nome || "Peça pendente")));
+  }
+  function MovimentoRow(m, idx) {
+    return E("button", {
+      key: `${m.car.id}-${m.h.id || idx}`,
+      onClick: () => onSelectCar && onSelectCar(m.car),
+      style: {
+        width: "100%",
+        background: C.bg,
+        border: `1px solid ${C.border}`,
+        borderRadius: 10,
+        padding: 8,
+        display: "grid",
+        gridTemplateColumns: "58px minmax(0,1fr)",
+        gap: 9,
+        color: C.text,
+        cursor: "pointer",
+        fontFamily: "inherit",
+        textAlign: "left"
+      }
+    }, TVPhoto(m.car, m.car.plate || "", C.success), E("div", {
+      style: {
         minWidth: 0
       }
     }, E("div", {
       style: {
-        color: accent === C.border ? C.text : accent,
-        fontSize: 12,
-        fontWeight: 900,
-        letterSpacing: .7,
-        marginBottom: 10
+        color: C.text,
+        fontSize: 13,
+        fontWeight: 950,
+        whiteSpace: "nowrap",
+        overflow: "hidden",
+        textOverflow: "ellipsis"
       }
-    }, title), children);
+    }, tituloCarro(m.car)), E("div", {
+      style: {
+        color: C.textMuted,
+        fontSize: 11,
+        marginTop: 2,
+        whiteSpace: "nowrap",
+        overflow: "hidden",
+        textOverflow: "ellipsis"
+      }
+    }, m.h.acao || "Movimento", m.h.por ? ` · ${m.h.por}` : ""), E("div", {
+      style: {
+        color: C.textDim,
+        fontSize: 10,
+        marginTop: 2
+      }
+    }, m.h.em || "")));
   }
   return E("div", {
     style: {
       minHeight: "100vh",
       background: C.bg,
       color: C.text,
-      padding: "calc(14px + env(safe-area-inset-top, 0px)) 14px calc(22px + env(safe-area-inset-bottom, 0px))"
+      padding: "calc(10px + env(safe-area-inset-top, 0px)) 10px calc(14px + env(safe-area-inset-bottom, 0px))"
     }
   }, E("header", {
     style: {
       display: "flex",
       alignItems: "center",
       justifyContent: "space-between",
-      gap: 12,
+      gap: 10,
       flexWrap: "wrap",
-      margin: "0 auto 14px",
-      maxWidth: 1500
+      margin: "0 auto 10px",
+      maxWidth: 1760
     }
   }, E("div", {
     style: {
       display: "flex",
       alignItems: "center",
-      gap: 12,
+      gap: 10,
       minWidth: 0
     }
   }, E("img", {
     src: LOGO,
     alt: "Premier",
     style: {
-      height: 42,
+      height: 38,
       objectFit: "contain",
       flexShrink: 0
     }
@@ -10982,7 +11193,7 @@ function ModoTVScreen({
       fontSize: 12,
       marginTop: 4
     }
-  }, "Painel vivo da preparação · auto 30s · ", lastSync.toLocaleTimeString("pt-BR", {
+  }, "Operação do dia · auto 30s · ", lastSync.toLocaleTimeString("pt-BR", {
     hour: "2-digit",
     minute: "2-digit"
   })))), E("div", {
@@ -11027,175 +11238,50 @@ function ModoTVScreen({
     }
   }, "\u00D7"))), E("main", {
     style: {
-      maxWidth: 1500,
+      maxWidth: 1760,
       margin: "0 auto",
       display: "flex",
       flexDirection: "column",
-      gap: 12
+      gap: 10
     }
   }, E("div", {
     style: {
       display: "grid",
       gridTemplateColumns: "repeat(auto-fit,minmax(145px,1fr))",
-      gap: 9
+      gap: 8
     }
   }, stats.map(s => E("div", {
     key: s.l,
     style: {
       background: C.card,
-      border: `1px solid ${s.c}33`,
-      borderRadius: 12,
-      padding: "13px 14px"
+      border: `1px solid ${s.c}28`,
+      borderRadius: 11,
+      padding: "10px 12px",
+      minHeight: 64
     }
   }, E("div", {
     style: {
       color: s.c,
-      fontSize: 26,
+      fontSize: 24,
       fontWeight: 950,
-      fontVariantNumeric: "tabular-nums",
-      lineHeight: 1
+      lineHeight: 1,
+      fontVariantNumeric: "tabular-nums"
     }
   }, s.v), E("div", {
     style: {
       color: C.textMuted,
       fontSize: 11,
       marginTop: 5,
-      fontWeight: 800
+      fontWeight: 850
     }
   }, s.l)))), E("div", {
     style: {
       display: "grid",
-      gridTemplateColumns: "repeat(auto-fit,minmax(min(100%,360px),1fr))",
-      gap: 12
+      gridTemplateColumns: "repeat(auto-fit,minmax(300px,1fr))",
+      gap: 10,
+      alignItems: "start"
     }
-  }, Panel("PRIORIDADE AGORA", criticos.length === 0 ? E("div", {
-    style: {
-      color: C.success,
-      fontSize: 14,
-      fontWeight: 800,
-      padding: "18px 4px"
-    }
-  }, "Sem carro crítico neste momento.") : E("div", {
-    style: {
-      display: "grid",
-      gridTemplateColumns: "repeat(auto-fit,minmax(min(100%,320px),1fr))",
-      gap: 10
-    }
-  }, criticos.map(item => E(CarTVCard, {
-    key: item.car.id,
-    item
-  }))), C.red), Panel("ALERTAS DA OPERAÇÃO", alertas.length === 0 ? E("div", {
-    style: {
-      color: C.textMuted,
-      fontSize: 13
-    }
-  }, "Nenhum alerta forte agora.") : E("div", {
-    style: {
-      display: "flex",
-      flexDirection: "column",
-      gap: 8
-    }
-  }, alertas.map((a, i) => E("button", {
-    key: `${a.label}-${a.car.id}-${i}`,
-    onClick: () => onSelectCar && onSelectCar(a.car),
-    style: {
-      background: C.bg,
-      border: `1px solid ${a.col}44`,
-      borderRadius: 10,
-      padding: "10px 11px",
-      color: C.text,
-      cursor: "pointer",
-      fontFamily: "inherit",
-      textAlign: "left",
-      width: "100%"
-    }
-  }, E("div", {
-    style: {
-      color: a.col,
-      fontSize: 12,
-      fontWeight: 900,
-      marginBottom: 3
-    }
-  }, a.label), E("div", {
-    style: {
-      color: C.text,
-      fontSize: 13,
-      fontWeight: 800,
-      overflow: "hidden",
-      textOverflow: "ellipsis",
-      whiteSpace: "nowrap"
-    }
-  }, tituloCarro(a.car)), E("div", {
-    style: {
-      color: C.textMuted,
-      fontSize: 11,
-      marginTop: 2,
-      overflow: "hidden",
-      textOverflow: "ellipsis",
-      whiteSpace: "nowrap"
-    }
-  }, a.detalhe))))), C.warning)), E("div", {
-    style: {
-      display: "grid",
-      gridTemplateColumns: "repeat(auto-fit,minmax(min(100%,300px),1fr))",
-      gap: 12
-    }
-  }, Panel("ATUALIZADOS RECENTEMENTE", recentes.length === 0 ? E("div", {
-    style: {
-      color: C.textMuted,
-      fontSize: 13
-    }
-  }, "Sem veículos ativos.") : E("div", {
-    style: {
-      display: "flex",
-      flexDirection: "column",
-      gap: 9
-    }
-  }, recentes.map(item => E(CarTVCard, {
-    key: item.car.id,
-    item,
-    compact: true
-  }))), C.info), Panel("ÚLTIMOS MOVIMENTOS", movimentos.length === 0 ? E("div", {
-    style: {
-      color: C.textMuted,
-      fontSize: 13
-    }
-  }, "Sem histórico recente.") : E("div", {
-    style: {
-      display: "flex",
-      flexDirection: "column",
-      gap: 8
-    }
-  }, movimentos.map((m, i) => E("div", {
-    key: `${m.car.id}-${m.h.id || i}`,
-    style: {
-      background: C.bg,
-      border: `1px solid ${C.border}`,
-      borderRadius: 10,
-      padding: "9px 11px"
-    }
-  }, E("div", {
-    style: {
-      color: C.text,
-      fontSize: 12,
-      fontWeight: 900,
-      overflow: "hidden",
-      textOverflow: "ellipsis",
-      whiteSpace: "nowrap"
-    }
-  }, tituloCarro(m.car)), E("div", {
-    style: {
-      color: C.textMuted,
-      fontSize: 11,
-      marginTop: 2
-    }
-  }, m.h.acao || "Movimento", m.h.por ? ` · ${m.h.por}` : ""), E("div", {
-    style: {
-      color: C.textDim,
-      fontSize: 10,
-      marginTop: 2
-    }
-  }, m.h.em || "")))), C.success)));
+  }, TVPanel("PRIORIDADE DO DIA", C.red, prioridadesPainel.length, prioridadesPainel.length ? prioridadesPainel.map(item => CarRow(item)) : EmptyTV("Sem prioridade crítica agora.")), TVPanel("PRESTADORES ATRASADOS", C.error, atrasosPainel.length, atrasosPainel.length ? atrasosPainel.map(item => AtrasoRow(item)) : EmptyTV("Nenhum prestador atrasado.")), TVPanel("PEÇAS PARA AGIR", C.warning, pecasPainel.length, pecasPainel.length ? pecasPainel.map((item, idx) => PecaRow(item, idx)) : EmptyTV("Sem peça urgente agora.")), TVPanel("MOVIMENTOS RECENTES", C.success, movimentosPainel.length, movimentosPainel.length ? movimentosPainel.map((m, idx) => MovimentoRow(m, idx)) : EmptyTV("Sem movimentação recente.")))));
 }
 
 // ═══ DASHBOARD ══════════════════════════════════════════════════
