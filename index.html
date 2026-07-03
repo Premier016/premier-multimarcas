@@ -412,6 +412,28 @@ function despesasComTotalPecas(car, pecas) {
     fornecedor: ""
   }] : semPecas;
 }
+function textoBusca(v) {
+  return (v || "").normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase().trim();
+}
+function estoqueDisponivel(item) {
+  return item && item.ativo !== false && Number(item.qtd || 0) > 0;
+}
+function estoqueCombinaComPeca(item, car, peca) {
+  if (!estoqueDisponivel(item) || !peca) return false;
+  const nomeEstoque = textoBusca(item.nome);
+  const nomePeca = textoBusca(peca.nome);
+  if (!nomeEstoque || !nomePeca) return false;
+  const palavras = nomePeca.split(/\s+/).filter(w => w.length >= 4);
+  const nomeOk = nomeEstoque.includes(nomePeca) || nomePeca.includes(nomeEstoque) || palavras.some(w => nomeEstoque.includes(w));
+  if (!nomeOk) return false;
+  const aplicacao = textoBusca(`${item.aplicacao || ""} ${item.modelos || ""} ${item.compatibilidade || ""}`);
+  if (!aplicacao || aplicacao.includes("universal")) return true;
+  const tokensCarro = textoBusca(`${car.marca || ""} ${car.name || ""} ${car.year || ""}`).split(/\s+/).filter(w => w.length >= 3);
+  return tokensCarro.some(t => aplicacao.includes(t));
+}
+function estoqueSugestoesParaPeca(estoque, car, peca) {
+  return (estoque || []).filter(item => estoqueCombinaComPeca(item, car, peca)).sort((a, b) => Number(b.qtd || 0) - Number(a.qtd || 0));
+}
 function dateFromAny(v) {
   if (!v) return null;
   if (v instanceof Date) return v;
@@ -1747,6 +1769,7 @@ function Badge({
 function Modal({
   title,
   onClose,
+  onBack,
   children,
   width = 600
 }) {
@@ -1778,18 +1801,35 @@ function Modal({
       padding: "16px 20px",
       borderBottom: `1px solid ${C.border}`,
       display: "flex",
-      justifyContent: "space-between",
       alignItems: "center",
+      gap: 10,
       position: "sticky",
       top: 0,
       background: C.card,
       zIndex: 10
     }
-  }, /*#__PURE__*/React.createElement("div", {
+  }, /*#__PURE__*/React.createElement("button", {
+    onClick: onBack || onClose,
+    style: {
+      background: "none",
+      border: `1px solid ${C.border}`,
+      borderRadius: 8,
+      color: C.textMuted,
+      cursor: "pointer",
+      fontSize: 18,
+      lineHeight: 1,
+      padding: "6px 9px"
+    }
+  }, "\u2190"), /*#__PURE__*/React.createElement("div", {
     style: {
       fontWeight: 700,
       fontSize: 14,
-      color: C.red
+      color: C.red,
+      flex: 1,
+      minWidth: 0,
+      overflow: "hidden",
+      textOverflow: "ellipsis",
+      whiteSpace: "nowrap"
     }
   }, title), /*#__PURE__*/React.createElement("button", {
     onClick: onClose,
@@ -3776,6 +3816,8 @@ function CentroPendenciasModal({
 function PecasPendentesModal({
   cars,
   user,
+  estoque = [],
+  onChangeEstoque,
   onSelectCar,
   onUpdateCar,
   onClose
@@ -3784,6 +3826,15 @@ function PecasPendentesModal({
   const [tipo, setTipo] = useState("Todas");
   const [urgencia, setUrgencia] = useState("Todas");
   const [busca, setBusca] = useState("");
+  const emptyEstoque = {
+    nome: "",
+    qtd: "1",
+    aplicacao: "",
+    local: "",
+    codigo: "",
+    valorUnit: ""
+  };
+  const [formEstoque, setFormEstoque] = useState(emptyEstoque);
   const ativos = (cars || []).filter(c => c.status !== "Vendido");
   const itens = ativos.flatMap(car => (car.pecas || []).filter(p => ["Necessária", "Orçada", "Comprada"].includes(p.status)).map(peca => {
     const instalar = peca.status === "Comprada";
@@ -3803,6 +3854,9 @@ function PecasPendentesModal({
   const totalComprar = itens.filter(i => !i.instalar).length;
   const totalInstalar = itens.filter(i => i.instalar).length;
   const totalValor = itens.reduce((s, i) => s + (Number(i.peca.valorUnit) || 0) * Number(i.peca.qtd || 1), 0);
+  const estoqueAtivo = (estoque || []).filter(estoqueDisponivel);
+  const estoqueTotalQtd = estoqueAtivo.reduce((s, p) => s + Number(p.qtd || 0), 0);
+  const sugestoesEstoque = itens.reduce((s, item) => s + estoqueSugestoesParaPeca(estoqueAtivo, item.car, item.peca).length, 0);
   const recorrentes = Object.values(itens.reduce((acc, item) => {
     const key = (item.peca.nome || "").trim().toLowerCase();
     if (!key) return acc;
@@ -3818,6 +3872,68 @@ function PecasPendentesModal({
   function abrir(car) {
     onClose();
     onSelectCar(car);
+  }
+  function salvarEstoque(upd) {
+    if (onChangeEstoque) onChangeEstoque(upd);
+  }
+  function addEstoque() {
+    if (!formEstoque.nome.trim()) return pushNotif("Informe o nome da peça do estoque.", "warning");
+    const nova = {
+      ...formEstoque,
+      id: uid(),
+      qtd: String(Math.max(0, Number(formEstoque.qtd) || 0)),
+      ativo: true,
+      criadoPor: user.name,
+      criadoEm: nowStr()
+    };
+    salvarEstoque([nova, ...(estoque || [])]);
+    setFormEstoque(emptyEstoque);
+    pushNotif("Peça adicionada ao estoque", "success");
+  }
+  function upEstoque(id, patch) {
+    salvarEstoque((estoque || []).map(p => p.id === id ? {
+      ...p,
+      ...patch,
+      atualizadoPor: user.name,
+      atualizadoEm: nowStr()
+    } : p));
+  }
+  function usarEstoque(item, estoqueItem) {
+    const qtdNecessaria = Math.max(1, Number(item.peca.qtd) || 1);
+    const qtdAtual = Math.max(0, Number(estoqueItem.qtd) || 0);
+    const qtdBaixa = Math.min(qtdAtual, qtdNecessaria);
+    if (qtdBaixa <= 0) return pushNotif("Peça sem quantidade disponível no estoque.", "warning");
+    const car = item.car;
+    const peca = item.peca;
+    const updEstoque = (estoque || []).map(p => p.id === estoqueItem.id ? {
+      ...p,
+      qtd: String(Math.max(0, qtdAtual - qtdBaixa)),
+      atualizadoPor: user.name,
+      atualizadoEm: nowStr()
+    } : p);
+    const updPecas = (car.pecas || []).map(p => p.id === peca.id ? {
+      ...p,
+      status: "Comprada",
+      fornecedor: "Estoque interno",
+      estoqueItemId: estoqueItem.id,
+      valorUnit: p.valorUnit || estoqueItem.valorUnit || "",
+      compradoEm: nowStr(),
+      obs: `${p.obs || ""}${p.obs ? "\n" : ""}Separada do estoque: ${estoqueItem.nome} (${qtdBaixa} un.)`
+    } : p);
+    const updated = {
+      ...car,
+      pecas: updPecas,
+      despesas: despesasComTotalPecas(car, updPecas),
+      historico: [...(car.historico || []), {
+        id: uid(),
+        acao: `Peça separada do estoque: ${peca.nome || estoqueItem.nome}`,
+        por: user.name,
+        em: nowStr()
+      }]
+    };
+    salvarEstoque(updEstoque);
+    onUpdateCar(updated);
+    pushNotif("Peça separada do estoque e vinculada ao carro", "success");
   }
   function marcarInstalada(item) {
     const car = item.car;
@@ -3843,9 +3959,9 @@ function PecasPendentesModal({
     pushNotif("Peça marcada como instalada", "success");
   }
   return /*#__PURE__*/React.createElement(Modal, {
-    title: "🔩 Peças Pendentes",
+    title: "🔩 Central de Peças",
     onClose: onClose,
-    width: 900
+    width: 980
   }, /*#__PURE__*/React.createElement("div", {
     style: {
       display: "flex",
@@ -3870,6 +3986,14 @@ function PecasPendentesModal({
     l: "Valor envolvido",
     v: fmt(totalValor),
     c: C.info
+  }, {
+    l: "Estoque ativo",
+    v: estoqueTotalQtd,
+    c: C.success
+  }, {
+    l: "Sugestões do estoque",
+    v: sugestoesEstoque,
+    c: sugestoesEstoque ? C.success : C.textMuted
   }].map(x => /*#__PURE__*/React.createElement("div", {
     key: x.l,
     style: {
@@ -3891,7 +4015,156 @@ function PecasPendentesModal({
       fontSize: 10,
       marginTop: 3
     }
-  }, x.l)))), recorrentes.length > 0 && /*#__PURE__*/React.createElement("div", {
+  }, x.l)))), /*#__PURE__*/React.createElement("div", {
+    style: {
+      background: C.bg,
+      border: `1px solid ${C.border}`,
+      borderRadius: 10,
+      padding: "11px 12px",
+      display: "flex",
+      flexDirection: "column",
+      gap: 10
+    }
+  }, /*#__PURE__*/React.createElement("div", {
+    style: {
+      display: "flex",
+      justifyContent: "space-between",
+      gap: 10,
+      alignItems: "center",
+      flexWrap: "wrap"
+    }
+  }, /*#__PURE__*/React.createElement("div", {
+    style: {
+      color: C.success,
+      fontSize: 12,
+      fontWeight: 900,
+      letterSpacing: .5
+    }
+  }, "ESTOQUE ATIVO"), /*#__PURE__*/React.createElement(Badge, {
+    label: `${estoqueAtivo.length} item(ns)`,
+    col: C.success
+  })), /*#__PURE__*/React.createElement("div", {
+    style: {
+      display: "grid",
+      gridTemplateColumns: "repeat(auto-fit,minmax(130px,1fr))",
+      gap: 8
+    }
+  }, /*#__PURE__*/React.createElement(Inp, {
+    label: "Peça",
+    value: formEstoque.nome,
+    onChange: v => setFormEstoque(p => ({
+      ...p,
+      nome: v
+    })),
+    placeholder: "Ex: Farol Onix",
+    small: true
+  }), /*#__PURE__*/React.createElement(Inp, {
+    label: "Qtd",
+    value: formEstoque.qtd,
+    onChange: v => setFormEstoque(p => ({
+      ...p,
+      qtd: v
+    })),
+    type: "number",
+    small: true
+  }), /*#__PURE__*/React.createElement(Inp, {
+    label: "Aplicação",
+    value: formEstoque.aplicacao,
+    onChange: v => setFormEstoque(p => ({
+      ...p,
+      aplicacao: v
+    })),
+    placeholder: "Marca/modelo/ano",
+    small: true
+  }), /*#__PURE__*/React.createElement(Inp, {
+    label: "Local",
+    value: formEstoque.local,
+    onChange: v => setFormEstoque(p => ({
+      ...p,
+      local: v
+    })),
+    placeholder: "Prateleira",
+    small: true
+  }), /*#__PURE__*/React.createElement(Inp, {
+    label: "Código",
+    value: formEstoque.codigo,
+    onChange: v => setFormEstoque(p => ({
+      ...p,
+      codigo: v
+    })),
+    placeholder: "Opcional",
+    small: true
+  }), /*#__PURE__*/React.createElement(Inp, {
+    label: "Valor unit.",
+    value: formEstoque.valorUnit,
+    onChange: v => setFormEstoque(p => ({
+      ...p,
+      valorUnit: v
+    })),
+    type: "number",
+    small: true
+  })), /*#__PURE__*/React.createElement(Btn, {
+    onClick: addEstoque,
+    small: true,
+    variant: "success",
+    style: {
+      justifyContent: "center"
+    }
+  }, "Adicionar ao estoque"), estoqueAtivo.length === 0 ? /*#__PURE__*/React.createElement("div", {
+    style: {
+      color: C.textMuted,
+      fontSize: 12,
+      textAlign: "center",
+      padding: "8px 0"
+    }
+  }, "Nenhuma peça em estoque ativo.") : /*#__PURE__*/React.createElement("div", {
+    style: {
+      display: "flex",
+      flexDirection: "column",
+      gap: 7
+    }
+  }, estoqueAtivo.slice(0, 8).map(p => /*#__PURE__*/React.createElement("div", {
+    key: p.id,
+    style: {
+      background: C.card,
+      border: `1px solid ${C.success}33`,
+      borderRadius: 9,
+      padding: "9px 10px",
+      display: "flex",
+      gap: 8,
+      alignItems: "center",
+      flexWrap: "wrap"
+    }
+  }, /*#__PURE__*/React.createElement("div", {
+    style: {
+      flex: 1,
+      minWidth: 180
+    }
+  }, /*#__PURE__*/React.createElement("div", {
+    style: {
+      color: C.text,
+      fontSize: 13,
+      fontWeight: 900
+    }
+  }, p.nome), /*#__PURE__*/React.createElement("div", {
+    style: {
+      color: C.textMuted,
+      fontSize: 10,
+      marginTop: 3
+    }
+  }, "Qtd: ", p.qtd, p.aplicacao ? ` · ${p.aplicacao}` : "", p.local ? ` · ${p.local}` : "", p.codigo ? ` · cód. ${p.codigo}` : "")), /*#__PURE__*/React.createElement(Btn, {
+    onClick: () => upEstoque(p.id, {
+      qtd: String(Math.max(0, Number(p.qtd || 0) - 1))
+    }),
+    small: true,
+    variant: "ghost"
+  }, "Baixar 1"), /*#__PURE__*/React.createElement(Btn, {
+    onClick: () => upEstoque(p.id, {
+      ativo: false
+    }),
+    small: true,
+    variant: "danger"
+  }, "Inativar"))))), recorrentes.length > 0 && /*#__PURE__*/React.createElement("div", {
     style: {
       background: C.warning + "12",
       border: `1px solid ${C.warning}44`,
@@ -3952,6 +4225,7 @@ function PecasPendentesModal({
     const car = item.car;
     const peca = item.peca;
     const col = item.instalar ? C.error : C.warning;
+    const sugestoes = estoqueSugestoesParaPeca(estoqueAtivo, car, peca);
     return /*#__PURE__*/React.createElement("div", {
       key: `${car.id}-${peca.id || peca.nome}`,
       onClick: () => abrir(car),
@@ -4002,7 +4276,14 @@ function PecasPendentesModal({
         fontSize: 10,
         marginTop: 3
       }
-    }, item.dias, " dia(s) pendente", peca.addedBy ? ` · incluída por ${peca.addedBy}` : "")), /*#__PURE__*/React.createElement("div", {
+    }, item.dias, " dia(s) pendente", peca.addedBy ? ` · incluída por ${peca.addedBy}` : ""), /*#__PURE__*/React.createElement("div", {
+      style: {
+        color: sugestoes.length ? C.success : C.textDim,
+        fontSize: 10,
+        marginTop: 4,
+        fontWeight: sugestoes.length ? 800 : 500
+      }
+    }, sugestoes.length ? `Estoque compatível: ${sugestoes[0].nome} (${sugestoes[0].qtd} un.)` : "Sem peça compatível no estoque")), /*#__PURE__*/React.createElement("div", {
       style: {
         display: "flex",
         flexDirection: "column",
@@ -4016,7 +4297,14 @@ function PecasPendentesModal({
       },
       small: true,
       variant: "ghost"
-    }, "Abrir ficha"), item.instalar && /*#__PURE__*/React.createElement(Btn, {
+    }, "Abrir ficha"), !item.instalar && sugestoes.length > 0 && /*#__PURE__*/React.createElement(Btn, {
+      onClick: e => {
+        e.stopPropagation();
+        usarEstoque(item, sugestoes[0]);
+      },
+      small: true,
+      variant: "success"
+    }, "Separar estoque"), item.instalar && /*#__PURE__*/React.createElement(Btn, {
       onClick: e => {
         e.stopPropagation();
         marcarInstalada(item);
@@ -7371,6 +7659,7 @@ function CarDetail({
   prestadores,
   initialTab = "overview",
   onBack,
+  onHome,
   onSave,
   onDelete
 }) {
@@ -7692,7 +7981,21 @@ function CarDetail({
       flexShrink: 0,
       padding: 4
     }
-  }, "\uD83D\uDDD1")), /*#__PURE__*/React.createElement("div", {
+  }, "\uD83D\uDDD1"), /*#__PURE__*/React.createElement("button", {
+    onClick: onHome,
+    title: "Fechar e ir para o início",
+    style: {
+      background: "transparent",
+      border: `1px solid ${C.border}`,
+      borderRadius: 8,
+      color: C.textMuted,
+      cursor: "pointer",
+      fontSize: 18,
+      lineHeight: 1,
+      padding: "6px 9px",
+      flexShrink: 0
+    }
+  }, "\u00D7")), /*#__PURE__*/React.createElement("div", {
     style: {
       marginTop: 8,
       display: "flex",
@@ -8290,7 +8593,8 @@ function CatalogoPublico({
   cars,
   users = [],
   user,
-  onBack
+  onBack,
+  onHome
 }) {
   const [search, setSearch] = useState("");
   const [status, setStatus] = useState("Todos");
@@ -9075,7 +9379,21 @@ function CatalogoPublico({
     onClick: onBack,
     small: true,
     variant: user ? "primary" : "ghost"
-  }, "Voltar")), /*#__PURE__*/React.createElement("main", {
+  }, "Voltar"), canManageCatalogo && /*#__PURE__*/React.createElement("button", {
+    onClick: onHome || onBack,
+    title: "Fechar e ir para o início",
+    style: {
+      background: "transparent",
+      border: `1px solid ${C.border}`,
+      borderRadius: 8,
+      color: C.textMuted,
+      cursor: "pointer",
+      fontSize: 18,
+      lineHeight: 1,
+      padding: "7px 10px",
+      flexShrink: 0
+    }
+  }, "\u00D7")), /*#__PURE__*/React.createElement("main", {
     style: {
       padding: "14px",
       maxWidth: 1180,
@@ -9196,6 +9514,7 @@ function CatalogoPublico({
 function AddCarForm({
   user,
   onBack,
+  onHome,
   onSave
 }) {
   const [car, setCar] = useState(() => createCar(user));
@@ -9250,11 +9569,27 @@ function AddCarForm({
     style: {
       fontSize: 14,
       fontWeight: 700,
-      color: C.red
+      color: C.red,
+      flex: 1,
+      minWidth: 0
     }
   }, "\uD83D\uDE97 NOVO VE\xCDCULO"), /*#__PURE__*/React.createElement(Btn, {
     onClick: () => setShowPlacaFipe(true), variant: "info", small: true
-  }, "\uD83D\uDD0D Consultar por Placa")), /*#__PURE__*/React.createElement("div", {
+  }, "\uD83D\uDD0D Consultar por Placa"), /*#__PURE__*/React.createElement("button", {
+    onClick: onHome,
+    title: "Fechar e ir para o início",
+    style: {
+      background: "transparent",
+      border: `1px solid ${C.border}`,
+      borderRadius: 8,
+      color: C.textMuted,
+      cursor: "pointer",
+      fontSize: 18,
+      lineHeight: 1,
+      padding: "7px 10px",
+      flexShrink: 0
+    }
+  }, "\u00D7")), /*#__PURE__*/React.createElement("div", {
     style: {
       padding: "16px 14px",
       paddingBottom: safeBottom(16),
@@ -9444,6 +9779,7 @@ function AddCarForm({
 function GarantiasScreen({
   cars,
   onBack,
+  onHome,
   onSelectCar
 }) {
   const hoje = new Date();
@@ -9456,6 +9792,156 @@ function GarantiasScreen({
   });
   const ativos = processados.filter(c => c.diasRest >= 0).sort((a, b) => a.diasRest - b.diasRest);
   const expirados = processados.filter(c => c.diasRest < 0).sort((a, b) => b.diasRest - a.diasRest);
+  const vencendo = ativos.filter(c => c.diasRest <= 15);
+  const semContato = processados.filter(c => !c.comprador || !c.compradorTel);
+  const custoGarantiaCarro = car => (car.despesas || []).filter(d => /garantia|p[oó]s|pos-venda|pós-venda/i.test(`${d.desc || ""} ${d.categoria || ""}`)).reduce((s, d) => s + (Number(d.valor) || 0), 0);
+  const custoGarantia = processados.reduce((s, c) => s + custoGarantiaCarro(c), 0);
+  const modelosRadar = Object.values(processados.reduce((acc, c) => {
+    const base = `${c.marca || ""} ${(c.name || "").split(" ").slice(0, 2).join(" ")}`.trim() || "Modelo não informado";
+    if (!acc[base]) acc[base] = {
+      modelo: base,
+      qtd: 0,
+      ativas: 0,
+      vencendo: 0,
+      custo: 0
+    };
+    acc[base].qtd += 1;
+    if (c.diasRest >= 0) acc[base].ativas += 1;
+    if (c.diasRest >= 0 && c.diasRest <= 15) acc[base].vencendo += 1;
+    acc[base].custo += custoGarantiaCarro(c);
+    return acc;
+  }, {})).sort((a, b) => b.custo - a.custo || b.vencendo - a.vencendo || b.qtd - a.qtd).slice(0, 4);
+  const radarCards = [{
+    l: "Ativas",
+    v: ativos.length,
+    c: C.success
+  }, {
+    l: "Vencendo 15d",
+    v: vencendo.length,
+    c: vencendo.length ? C.error : C.success
+  }, {
+    l: "Vencidas",
+    v: expirados.length,
+    c: expirados.length ? C.textMuted : C.success
+  }, {
+    l: "Sem contato",
+    v: semContato.length,
+    c: semContato.length ? C.warning : C.success
+  }, {
+    l: "Custo garantia",
+    v: fmt(custoGarantia),
+    c: custoGarantia > 0 ? C.error : C.success
+  }];
+  function RadarGarantias() {
+    const mostrarModelos = modelosRadar.some(m => m.qtd > 1 || m.custo > 0);
+    return /*#__PURE__*/React.createElement(React.Fragment, null, /*#__PURE__*/React.createElement("div", {
+      style: {
+        display: "grid",
+        gridTemplateColumns: "repeat(auto-fit,minmax(120px,1fr))",
+        gap: 8,
+        marginBottom: 12
+      }
+    }, radarCards.map(x => /*#__PURE__*/React.createElement("div", {
+      key: x.l,
+      style: {
+        background: C.card,
+        border: `1px solid ${x.c}44`,
+        borderRadius: 10,
+        padding: "10px 11px"
+      }
+    }, /*#__PURE__*/React.createElement("div", {
+      style: {
+        color: x.c,
+        fontSize: String(x.v).startsWith("R$") ? 14 : 23,
+        fontWeight: 900,
+        lineHeight: 1.1,
+        overflow: "hidden",
+        textOverflow: "ellipsis",
+        whiteSpace: "nowrap"
+      }
+    }, x.v), /*#__PURE__*/React.createElement("div", {
+      style: {
+        color: C.textMuted,
+        fontSize: 10,
+        marginTop: 4,
+        fontWeight: 700
+      }
+    }, x.l)))), (vencendo.length > 0 || mostrarModelos) && /*#__PURE__*/React.createElement("div", {
+      style: {
+        background: C.card,
+        border: `1px solid ${vencendo.length ? C.warning + "55" : C.border}`,
+        borderRadius: 11,
+        padding: "11px 12px",
+        marginBottom: 14,
+        display: "grid",
+        gridTemplateColumns: "repeat(auto-fit,minmax(220px,1fr))",
+        gap: 10
+      }
+    }, vencendo.length > 0 && /*#__PURE__*/React.createElement("div", null, /*#__PURE__*/React.createElement("div", {
+      style: {
+        color: C.warning,
+        fontSize: 11,
+        fontWeight: 900,
+        letterSpacing: .5,
+        marginBottom: 7
+      }
+    }, "RISCO DA SEMANA"), vencendo.slice(0, 3).map(c => /*#__PURE__*/React.createElement("button", {
+      key: `risco-${c.id}`,
+      onClick: () => onSelectCar(c),
+      style: {
+        width: "100%",
+        background: C.bg,
+        border: `1px solid ${C.warning}33`,
+        borderRadius: 8,
+        padding: "7px 9px",
+        color: C.text,
+        cursor: "pointer",
+        textAlign: "left",
+        fontFamily: "inherit",
+        marginBottom: 6
+      }
+    }, /*#__PURE__*/React.createElement("div", {
+      style: {
+        fontSize: 12,
+        fontWeight: 800
+      }
+    }, c.marca ? `${c.marca} ` : "", c.name), /*#__PURE__*/React.createElement("div", {
+      style: {
+        fontSize: 10,
+        color: C.textMuted,
+        marginTop: 2
+      }
+    }, c.diasRest, " dia(s) · ", c.comprador || "sem comprador")))), mostrarModelos && /*#__PURE__*/React.createElement("div", null, /*#__PURE__*/React.createElement("div", {
+      style: {
+        color: C.info,
+        fontSize: 11,
+        fontWeight: 900,
+        letterSpacing: .5,
+        marginBottom: 7
+      }
+    }, "MODELOS EM OBSERVAÇÃO"), modelosRadar.filter(m => m.qtd > 1 || m.custo > 0).map(m => /*#__PURE__*/React.createElement("div", {
+      key: m.modelo,
+      style: {
+        background: C.bg,
+        border: `1px solid ${m.custo > 0 ? C.error + "33" : C.border}`,
+        borderRadius: 8,
+        padding: "7px 9px",
+        marginBottom: 6
+      }
+    }, /*#__PURE__*/React.createElement("div", {
+      style: {
+        color: C.text,
+        fontSize: 12,
+        fontWeight: 800
+      }
+    }, m.modelo), /*#__PURE__*/React.createElement("div", {
+      style: {
+        color: C.textMuted,
+        fontSize: 10,
+        marginTop: 2
+      }
+    }, m.qtd, " venda(s) com garantia", m.vencendo ? ` · ${m.vencendo} vencendo` : "", m.custo > 0 ? ` · ${fmt(m.custo)}` : ""))))));
+  }
   return /*#__PURE__*/React.createElement("div", {
     style: {
       minHeight: "100vh",
@@ -9484,22 +9970,37 @@ function GarantiasScreen({
     style: {
       fontSize: 14,
       fontWeight: 700,
-      color: C.red
+      color: C.red,
+      flex: 1,
+      minWidth: 0
     }
   }, "\uD83D\uDEE1\uFE0F GARANTIAS"), /*#__PURE__*/React.createElement("div", {
     style: {
-      marginLeft: "auto",
       fontSize: 11,
       color: C.textMuted
     }
-  }, ativos.length, " ativas")), /*#__PURE__*/React.createElement("div", {
+  }, ativos.length, " ativas"), /*#__PURE__*/React.createElement("button", {
+    onClick: onHome,
+    title: "Fechar e ir para o início",
+    style: {
+      background: "transparent",
+      border: `1px solid ${C.border}`,
+      borderRadius: 8,
+      color: C.textMuted,
+      cursor: "pointer",
+      fontSize: 18,
+      lineHeight: 1,
+      padding: "7px 10px",
+      flexShrink: 0
+    }
+  }, "\u00D7")), /*#__PURE__*/React.createElement("div", {
     style: {
       padding: "16px 14px",
       paddingBottom: safeBottom(16),
       maxWidth: 900,
       margin: "0 auto"
     }
-  }, ativos.length === 0 && expirados.length === 0 ? /*#__PURE__*/React.createElement("div", {
+  }, /*#__PURE__*/React.createElement(RadarGarantias, null), ativos.length === 0 && expirados.length === 0 ? /*#__PURE__*/React.createElement("div", {
     style: {
       textAlign: "center",
       padding: "50px 0",
@@ -10107,6 +10608,596 @@ function RelatorioModal({
   }, d.lucro !== 0 ? fmt(d.lucro) : "—")))))));
 }
 
+// ═══ MODO TV / PAINEL OPERACIONAL ═══════════════════════════════
+function ModoTVScreen({
+  cars,
+  metaDiaria = 3,
+  onBack,
+  onHome,
+  onSelectCar,
+  onRefresh
+}) {
+  const E = React.createElement;
+  const [, setClock] = useState(Date.now());
+  const [lastSync, setLastSync] = useState(new Date());
+  const refreshRef = useRef(onRefresh);
+  useEffect(() => {
+    const timer = setInterval(() => setClock(Date.now()), 60000);
+    return () => clearInterval(timer);
+  }, []);
+  useEffect(() => {
+    refreshRef.current = onRefresh;
+  }, [onRefresh]);
+  useEffect(() => {
+    const timer = setInterval(() => {
+      if (refreshRef.current) refreshRef.current({
+        silent: true
+      });
+      setLastSync(new Date());
+    }, 30000);
+    return () => clearInterval(timer);
+  }, []);
+  const ativos = (cars || []).filter(c => c.status !== "Vendido");
+  const hojeBR = new Date().toLocaleDateString("pt-BR");
+  const metaNum = Math.max(0, Number(metaDiaria) || 0);
+  const liberadosHoje = ativos.filter(c => (c.aprovadoEm || "").startsWith(hojeBR) || (c.historico || []).some(h => (h.em || "").startsWith(hojeBR) && ((h.acao || "").includes("Aprovado") || (h.acao || "").includes("Pronto para Venda")))).length;
+  function ultimoEvento(car) {
+    const hist = (car.historico || []).filter(h => h && h.em);
+    const last = hist[hist.length - 1] || null;
+    const dt = dateFromAny(last && last.em) || dateFromAny(car.aprovadoEm) || dateFromAny(car.createdAt) || new Date(0);
+    return {
+      acao: last && last.acao || "Cadastro inicial",
+      por: last && last.por || car.createdBy || "",
+      em: last && last.em || car.createdAt || "",
+      ts: dt.getTime()
+    };
+  }
+  function proximoPasso(car, p) {
+    if (p.atrasado) return `Cobrar ${car.prestadorAtual || "prestador"} hoje`;
+    if (p.pecasCompradas.length > 0) return `Instalar ${p.pecasCompradas[0].nome || "peça comprada"}`;
+    if (p.pecasAComprar.length > 0) return `Comprar ${p.pecasAComprar[0].nome || "peça pendente"}`;
+    if (p.prep.categorias.length > 0) return `Finalizar ${p.prep.categorias[0].label}`;
+    if (!car.precoVenda) return "Definir preço de venda";
+    if (!car.fotos || car.fotos.length === 0) return "Fazer fotos para anúncio";
+    if (car.status === "Aguardando Aprovação") return "Conferir e aprovar";
+    if (car.status === "Pronto para Venda") return "Disponível para venda";
+    return car.status || "Acompanhar";
+  }
+  const dados = ativos.map(car => {
+    const p = pendenciasDoCarro(car);
+    const saude = saudePreparacao(car);
+    const dias = daysSince(car.createdAt);
+    const evt = ultimoEvento(car);
+    const prestadorDias = p.prazoPrestador;
+    return {
+      car,
+      p,
+      saude,
+      dias,
+      prestadorDias,
+      ultimo: evt,
+      passo: proximoPasso(car, p)
+    };
+  });
+  const criticos = dados.filter(x => x.car.status !== "Pronto para Venda" && (x.saude.score < 80 || x.p.atrasado || x.p.pecasCompradas.length > 0 || x.p.pecasAComprar.length > 0 || x.p.parado)).sort((a, b) => (a.p.atrasado ? -1 : 0) - (b.p.atrasado ? -1 : 0) || a.saude.score - b.saude.score || b.dias - a.dias).slice(0, 8);
+  const recentes = [...dados].sort((a, b) => b.ultimo.ts - a.ultimo.ts).slice(0, 6);
+  const prestadoresAtrasados = dados.filter(x => x.p.atrasado).sort((a, b) => a.p.prazoPrestador - b.p.prazoPrestador);
+  const pecasInstalar = dados.flatMap(x => x.p.pecasCompradas.map(peca => ({
+    car: x.car,
+    peca,
+    tipo: "instalar"
+  })));
+  const pecasComprar = dados.flatMap(x => x.p.pecasAComprar.map(peca => ({
+    car: x.car,
+    peca,
+    tipo: "comprar"
+  })));
+  const movimentos = dados.flatMap(x => (x.car.historico || []).map(h => ({
+    car: x.car,
+    h,
+    ts: (dateFromAny(h.em) || new Date(0)).getTime()
+  }))).sort((a, b) => b.ts - a.ts).slice(0, 8);
+  const alertas = [
+    ...prestadoresAtrasados.map(x => ({
+      col: C.error,
+      label: "Prestador atrasado",
+      detalhe: `${x.car.prestadorAtual || "Prestador"} · ${Math.abs(x.p.prazoPrestador)}d vencido`,
+      car: x.car
+    })),
+    ...pecasInstalar.slice(0, 6).map(x => ({
+      col: C.info,
+      label: "Peça comprada sem instalar",
+      detalhe: x.peca.nome || "Peça pendente",
+      car: x.car
+    })),
+    ...pecasComprar.slice(0, 5).map(x => ({
+      col: C.warning,
+      label: "Peça a comprar",
+      detalhe: x.peca.nome || "Peça pendente",
+      car: x.car
+    }))
+  ].slice(0, 10);
+  const stats = [{
+    l: "Ativos",
+    v: ativos.length,
+    c: C.red
+  }, {
+    l: "Em preparação",
+    v: ativos.filter(c => c.status === "Em Preparação" || c.status === "Entrada").length,
+    c: C.info
+  }, {
+    l: "Críticos",
+    v: dados.filter(x => x.saude.score < 50).length,
+    c: C.error
+  }, {
+    l: "Atrasados",
+    v: prestadoresAtrasados.length,
+    c: prestadoresAtrasados.length ? C.error : C.success
+  }, {
+    l: "Peças pend.",
+    v: pecasInstalar.length + pecasComprar.length,
+    c: pecasInstalar.length ? C.warning : C.info
+  }, {
+    l: "Meta hoje",
+    v: `${liberadosHoje}/${metaNum}`,
+    c: metaNum > 0 && liberadosHoje >= metaNum ? C.success : C.warning
+  }];
+  function BadgeTV(label, col) {
+    return E("span", {
+      style: {
+        background: col + "18",
+        border: `1px solid ${col}44`,
+        borderRadius: 8,
+        color: col,
+        padding: "4px 8px",
+        fontSize: 11,
+        fontWeight: 900,
+        whiteSpace: "nowrap"
+      }
+    }, label);
+  }
+  function ProgressBar(pct, col, h = 8) {
+    return E("div", {
+      style: {
+        height: h,
+        background: C.border,
+        borderRadius: h,
+        overflow: "hidden"
+      }
+    }, E("div", {
+      style: {
+        width: `${Math.max(3, Math.min(100, pct || 0))}%`,
+        height: "100%",
+        background: col,
+        borderRadius: h
+      }
+    }));
+  }
+  function CarTVCard({
+    item,
+    compact = false
+  }) {
+    const car = item.car;
+    const foto = car.fotos && car.fotos.length > 0 ? car.fotos[0].url : null;
+    const statusCol = ST_COL[car.status] || C.border;
+    const atraso = item.p.atrasado;
+    const borderCol = atraso ? C.error : item.saude.score < 50 ? C.error : item.saude.score < 80 ? C.warning : C.border;
+    return E("button", {
+      onClick: () => onSelectCar && onSelectCar(car),
+      style: {
+        background: C.card,
+        border: `1px solid ${borderCol}66`,
+        borderRadius: 12,
+        padding: 0,
+        overflow: "hidden",
+        color: C.text,
+        cursor: "pointer",
+        textAlign: "left",
+        fontFamily: "inherit",
+        boxShadow: atraso ? `0 0 0 1px ${C.error}33, 0 10px 30px #0006` : "0 10px 28px #0005",
+        minHeight: compact ? 122 : 166
+      }
+    }, E("div", {
+      style: {
+        display: "flex",
+        minHeight: compact ? 122 : 166
+      }
+    }, E("div", {
+      style: {
+        width: compact ? 96 : 136,
+        flexShrink: 0,
+        background: C.bg,
+        position: "relative",
+        overflow: "hidden"
+      }
+    }, foto ? E("img", {
+      src: foto,
+      alt: "",
+      style: {
+        width: "100%",
+        height: "100%",
+        objectFit: "cover",
+        display: "block"
+      }
+    }) : E("div", {
+      style: {
+        width: "100%",
+        height: "100%",
+        display: "flex",
+        alignItems: "center",
+        justifyContent: "center",
+        color: C.textDim,
+        fontSize: compact ? 30 : 42
+      }
+    }, "🚗"), E("div", {
+      style: {
+        position: "absolute",
+        left: 7,
+        bottom: 7,
+        background: "#000b",
+        borderRadius: 7,
+        padding: "3px 7px",
+        color: dayColor(item.dias),
+        fontSize: 11,
+        fontWeight: 900
+      }
+    }, `${item.dias}d`)), E("div", {
+      style: {
+        flex: 1,
+        minWidth: 0,
+        padding: compact ? "10px 11px" : "13px 14px",
+        display: "flex",
+        flexDirection: "column",
+        gap: 8
+      }
+    }, E("div", {
+      style: {
+        display: "flex",
+        gap: 8,
+        justifyContent: "space-between",
+        alignItems: "flex-start"
+      }
+    }, E("div", {
+      style: {
+        minWidth: 0
+      }
+    }, E("div", {
+      style: {
+        color: C.text,
+        fontSize: compact ? 14 : 18,
+        fontWeight: 900,
+        lineHeight: 1.1,
+        whiteSpace: "nowrap",
+        overflow: "hidden",
+        textOverflow: "ellipsis"
+      }
+    }, tituloCarro(car)), E("div", {
+      style: {
+        color: C.textMuted,
+        fontSize: compact ? 10 : 12,
+        marginTop: 3,
+        whiteSpace: "nowrap",
+        overflow: "hidden",
+        textOverflow: "ellipsis"
+      }
+    }, car.plate || "Sem placa", " · ", car.loja || "Loja")), BadgeTV(item.saude.score, item.saude.col)), E("div", {
+      style: {
+        display: "flex",
+        gap: 6,
+        flexWrap: "wrap"
+      }
+    }, BadgeTV(car.status || "Status", statusCol), item.p.emPrestador && BadgeTV(car.prestadorAtual || "Prestador", item.p.atrasado ? C.error : C.warning), item.p.pecasCompradas.length > 0 && BadgeTV(`${item.p.pecasCompradas.length} peça(s) instalar`, C.info)), E("div", {
+      style: {
+        marginTop: "auto"
+      }
+    }, E("div", {
+      style: {
+        display: "flex",
+        justifyContent: "space-between",
+        color: C.textMuted,
+        fontSize: 11,
+        marginBottom: 5,
+        gap: 8
+      }
+    }, E("span", null, "Preparação"), E("b", {
+      style: {
+        color: item.p.prep.pct === 100 ? C.success : C.text
+      }
+    }, `${item.p.prep.pct}%`)), ProgressBar(item.p.prep.pct, item.p.prep.pct === 100 ? C.success : C.info)), E("div", {
+      style: {
+        color: item.saude.score < 50 ? C.error : item.saude.score < 80 ? C.warning : C.textMuted,
+        fontSize: compact ? 11 : 12,
+        fontWeight: 800,
+        whiteSpace: "nowrap",
+        overflow: "hidden",
+        textOverflow: "ellipsis"
+      }
+    }, item.passo))));
+  }
+  function Panel(title, children, accent = C.border) {
+    return E("section", {
+      style: {
+        background: C.card,
+        border: `1px solid ${accent}44`,
+        borderRadius: 12,
+        padding: 14,
+        minWidth: 0
+      }
+    }, E("div", {
+      style: {
+        color: accent === C.border ? C.text : accent,
+        fontSize: 12,
+        fontWeight: 900,
+        letterSpacing: .7,
+        marginBottom: 10
+      }
+    }, title), children);
+  }
+  return E("div", {
+    style: {
+      minHeight: "100vh",
+      background: C.bg,
+      color: C.text,
+      padding: "calc(14px + env(safe-area-inset-top, 0px)) 14px calc(22px + env(safe-area-inset-bottom, 0px))"
+    }
+  }, E("header", {
+    style: {
+      display: "flex",
+      alignItems: "center",
+      justifyContent: "space-between",
+      gap: 12,
+      flexWrap: "wrap",
+      margin: "0 auto 14px",
+      maxWidth: 1500
+    }
+  }, E("div", {
+    style: {
+      display: "flex",
+      alignItems: "center",
+      gap: 12,
+      minWidth: 0
+    }
+  }, E("img", {
+    src: LOGO,
+    alt: "Premier",
+    style: {
+      height: 42,
+      objectFit: "contain",
+      flexShrink: 0
+    }
+  }), E("div", {
+    style: {
+      minWidth: 0
+    }
+  }, E("div", {
+    style: {
+      color: C.red,
+      fontSize: 20,
+      fontWeight: 950,
+      lineHeight: 1
+    }
+  }, "Modo TV"), E("div", {
+    style: {
+      color: C.textMuted,
+      fontSize: 12,
+      marginTop: 4
+    }
+  }, "Painel vivo da preparação · auto 30s · ", lastSync.toLocaleTimeString("pt-BR", {
+    hour: "2-digit",
+    minute: "2-digit"
+  })))), E("div", {
+    style: {
+      display: "flex",
+      gap: 8,
+      flexShrink: 0
+    }
+  }, E("button", {
+    onClick: onRefresh,
+    style: {
+      background: C.card,
+      border: `1px solid ${C.border}`,
+      borderRadius: 10,
+      color: C.text,
+      padding: "9px 12px",
+      cursor: "pointer",
+      fontWeight: 800
+    }
+  }, "Atualizar"), E("button", {
+    onClick: onBack,
+    style: {
+      background: C.card,
+      border: `1px solid ${C.border}`,
+      borderRadius: 10,
+      color: C.text,
+      padding: "9px 12px",
+      cursor: "pointer",
+      fontWeight: 900
+    }
+  }, "\u2190 Voltar"), E("button", {
+    onClick: onHome,
+    title: "Fechar e ir para o início",
+    style: {
+      background: C.red,
+      border: "none",
+      borderRadius: 10,
+      color: "#fff",
+      padding: "9px 12px",
+      cursor: "pointer",
+      fontWeight: 900
+    }
+  }, "\u00D7"))), E("main", {
+    style: {
+      maxWidth: 1500,
+      margin: "0 auto",
+      display: "flex",
+      flexDirection: "column",
+      gap: 12
+    }
+  }, E("div", {
+    style: {
+      display: "grid",
+      gridTemplateColumns: "repeat(auto-fit,minmax(145px,1fr))",
+      gap: 9
+    }
+  }, stats.map(s => E("div", {
+    key: s.l,
+    style: {
+      background: C.card,
+      border: `1px solid ${s.c}33`,
+      borderRadius: 12,
+      padding: "13px 14px"
+    }
+  }, E("div", {
+    style: {
+      color: s.c,
+      fontSize: 26,
+      fontWeight: 950,
+      fontVariantNumeric: "tabular-nums",
+      lineHeight: 1
+    }
+  }, s.v), E("div", {
+    style: {
+      color: C.textMuted,
+      fontSize: 11,
+      marginTop: 5,
+      fontWeight: 800
+    }
+  }, s.l)))), E("div", {
+    style: {
+      display: "grid",
+      gridTemplateColumns: "repeat(auto-fit,minmax(min(100%,360px),1fr))",
+      gap: 12
+    }
+  }, Panel("PRIORIDADE AGORA", criticos.length === 0 ? E("div", {
+    style: {
+      color: C.success,
+      fontSize: 14,
+      fontWeight: 800,
+      padding: "18px 4px"
+    }
+  }, "Sem carro crítico neste momento.") : E("div", {
+    style: {
+      display: "grid",
+      gridTemplateColumns: "repeat(auto-fit,minmax(min(100%,320px),1fr))",
+      gap: 10
+    }
+  }, criticos.map(item => E(CarTVCard, {
+    key: item.car.id,
+    item
+  }))), C.red), Panel("ALERTAS DA OPERAÇÃO", alertas.length === 0 ? E("div", {
+    style: {
+      color: C.textMuted,
+      fontSize: 13
+    }
+  }, "Nenhum alerta forte agora.") : E("div", {
+    style: {
+      display: "flex",
+      flexDirection: "column",
+      gap: 8
+    }
+  }, alertas.map((a, i) => E("button", {
+    key: `${a.label}-${a.car.id}-${i}`,
+    onClick: () => onSelectCar && onSelectCar(a.car),
+    style: {
+      background: C.bg,
+      border: `1px solid ${a.col}44`,
+      borderRadius: 10,
+      padding: "10px 11px",
+      color: C.text,
+      cursor: "pointer",
+      fontFamily: "inherit",
+      textAlign: "left",
+      width: "100%"
+    }
+  }, E("div", {
+    style: {
+      color: a.col,
+      fontSize: 12,
+      fontWeight: 900,
+      marginBottom: 3
+    }
+  }, a.label), E("div", {
+    style: {
+      color: C.text,
+      fontSize: 13,
+      fontWeight: 800,
+      overflow: "hidden",
+      textOverflow: "ellipsis",
+      whiteSpace: "nowrap"
+    }
+  }, tituloCarro(a.car)), E("div", {
+    style: {
+      color: C.textMuted,
+      fontSize: 11,
+      marginTop: 2,
+      overflow: "hidden",
+      textOverflow: "ellipsis",
+      whiteSpace: "nowrap"
+    }
+  }, a.detalhe))))), C.warning)), E("div", {
+    style: {
+      display: "grid",
+      gridTemplateColumns: "repeat(auto-fit,minmax(min(100%,300px),1fr))",
+      gap: 12
+    }
+  }, Panel("ATUALIZADOS RECENTEMENTE", recentes.length === 0 ? E("div", {
+    style: {
+      color: C.textMuted,
+      fontSize: 13
+    }
+  }, "Sem veículos ativos.") : E("div", {
+    style: {
+      display: "flex",
+      flexDirection: "column",
+      gap: 9
+    }
+  }, recentes.map(item => E(CarTVCard, {
+    key: item.car.id,
+    item,
+    compact: true
+  }))), C.info), Panel("ÚLTIMOS MOVIMENTOS", movimentos.length === 0 ? E("div", {
+    style: {
+      color: C.textMuted,
+      fontSize: 13
+    }
+  }, "Sem histórico recente.") : E("div", {
+    style: {
+      display: "flex",
+      flexDirection: "column",
+      gap: 8
+    }
+  }, movimentos.map((m, i) => E("div", {
+    key: `${m.car.id}-${m.h.id || i}`,
+    style: {
+      background: C.bg,
+      border: `1px solid ${C.border}`,
+      borderRadius: 10,
+      padding: "9px 11px"
+    }
+  }, E("div", {
+    style: {
+      color: C.text,
+      fontSize: 12,
+      fontWeight: 900,
+      overflow: "hidden",
+      textOverflow: "ellipsis",
+      whiteSpace: "nowrap"
+    }
+  }, tituloCarro(m.car)), E("div", {
+    style: {
+      color: C.textMuted,
+      fontSize: 11,
+      marginTop: 2
+    }
+  }, m.h.acao || "Movimento", m.h.por ? ` · ${m.h.por}` : ""), E("div", {
+    style: {
+      color: C.textDim,
+      fontSize: 10,
+      marginTop: 2
+    }
+  }, m.h.em || "")))), C.success)));
+}
+
 // ═══ DASHBOARD ══════════════════════════════════════════════════
 function Dashboard({
   cars,
@@ -10132,16 +11223,28 @@ function Dashboard({
   onOpenPecasPendentes,
   onOpenPrepCategorias,
   onOpenCatalogo,
+  onOpenModoTV,
+  dashboardState = {},
+  onDashboardStateChange,
   metaDiaria = 3,
   onChangeMetaDiaria,
   onRefresh,
   logCount
 }) {
-  const [search, setSearch] = useState("");
-  const [fStatus, setFStatus] = useState("Todos");
-  const [fLoja, setFLoja] = useState("Todas");
-  const [verVendidos, setVerVendidos] = useState(false);
+  const [search, setSearch] = useState(dashboardState.search || "");
+  const [fStatus, setFStatus] = useState(dashboardState.fStatus || "Todos");
+  const [fLoja, setFLoja] = useState(dashboardState.fLoja || "Todas");
+  const [verVendidos, setVerVendidos] = useState(!!dashboardState.verVendidos);
   const [showMenu, setShowMenu] = useState(false);
+  useEffect(() => {
+    if (!onDashboardStateChange) return;
+    onDashboardStateChange({
+      search,
+      fStatus,
+      fLoja,
+      verVendidos
+    });
+  }, [search, fStatus, fLoja, verVendidos]);
   const totalVendidos = cars.filter(c => c.status === "Vendido").length;
   const noPrestador = cars.filter(c => c.prestadorAtual && c.prestadorAtual !== "Sem prestador").length;
   const prestadorVencidos = cars.filter(c => c.prestadorAtual && c.prestadorAtual !== "Sem prestador" && c.prestadorPrazo && daysUntil(c.prestadorPrazo) < 0).length;
@@ -10199,7 +11302,7 @@ function Dashboard({
     fn: onOpenPendencias
   }, {
     icon: "🔩",
-    label: `Peças Pendentes${pecasPendentesCount ? " (" + pecasPendentesCount + ")" : ""}`,
+    label: `Central de Peças${pecasPendentesCount ? " (" + pecasPendentesCount + ")" : ""}`,
     fn: onOpenPecasPendentes
   }, {
     icon: "🛒",
@@ -10209,6 +11312,10 @@ function Dashboard({
     icon: "🔧",
     label: "Logística / Prestadores",
     fn: onOpenLogistica
+  }, {
+    icon: "📺",
+    label: "Modo TV",
+    fn: onOpenModoTV
   }, ...(CAN.suppliers(user.role) ? [{
     icon: "🏭",
     label: "Cadastro de Prestadores",
@@ -10741,6 +11848,7 @@ function App() {
   const [suppliers, setSuppliers] = useState([]);
   const [prestadores, setPrestadores] = useState([]);
   const [prepCategorias, setPrepCategorias] = useState(() => applyPrepCategoriasConfig(prepCategoriasDefaultList()));
+  const [pecasEstoque, setPecasEstoque] = useState([]);
   const [metaDiaria, setMetaDiaria] = useState(3);
   const [despesasFixas, setDespesasFixas] = useState([]);
   const [logs, setLogs] = useState([]);
@@ -10760,7 +11868,16 @@ function App() {
   const [showPendencias, setShowPendencias] = useState(false);
   const [showPecasPendentes, setShowPecasPendentes] = useState(false);
   const [showPrepCategorias, setShowPrepCategorias] = useState(false);
+  const [dashboardState, setDashboardState] = useState({
+    search: "",
+    fStatus: "Todos",
+    fLoja: "Todas",
+    verVendidos: false
+  });
   const [deepLinkDone, setDeepLinkDone] = useState(false);
+  const [returnTarget, setReturnTarget] = useState(null);
+  const dashboardScrollRef = useRef(0);
+  const restoreDashboardScrollRef = useRef(false);
   applyPrepCategoriasConfig(prepCategorias);
   const notifs = useNotifications();
   useEffect(() => {
@@ -10772,6 +11889,21 @@ function App() {
   useEffect(() => {
     applyTheme(darkMode);
   }, [darkMode]);
+  useEffect(() => {
+    if (view !== "dashboard" || !restoreDashboardScrollRef.current) return;
+    const y = dashboardScrollRef.current || 0;
+    restoreDashboardScrollRef.current = false;
+    setTimeout(() => {
+      try {
+        window.scrollTo({
+          top: y,
+          behavior: "instant"
+        });
+      } catch (e) {
+        window.scrollTo(0, y);
+      }
+    }, 0);
+  }, [view]);
 
   // Wire up the activity log
   useEffect(() => {
@@ -10818,7 +11950,7 @@ function App() {
   }, [ready, user, cars, deepLinkDone]);
   async function loadAll() {
     try {
-      const [dbUsers, dbCars, dbSup, dbPrest, dbDark, dbDesp, dbLogs, dbPrepCats, dbMetaDiaria] = await Promise.all([sbGet("users"), sbLoadCars(), sbGet("suppliers"), sbGet("prestadores"), sbGet("dark_mode"), sbGet("despesas_fixas"), sbGet("activity_log"), sbGet("prep_categorias"), sbGet("meta_diaria")]);
+      const [dbUsers, dbCars, dbSup, dbPrest, dbDark, dbDesp, dbLogs, dbPrepCats, dbMetaDiaria, dbPecasEstoque] = await Promise.all([sbGet("users"), sbLoadCars(), sbGet("suppliers"), sbGet("prestadores"), sbGet("dark_mode"), sbGet("despesas_fixas"), sbGet("activity_log"), sbGet("prep_categorias"), sbGet("meta_diaria"), sbGet("pecas_estoque")]);
       if (dbUsers && Array.isArray(dbUsers) && dbUsers.length > 0) setUsers(dbUsers);else await sbSet("users", DEFAULT_USERS);
       if (dbCars && Array.isArray(dbCars)) setCars(dbCars);
       const prepCfg = applyPrepCategoriasConfig(dbPrepCats);
@@ -10837,6 +11969,7 @@ function App() {
       if (dbDesp && Array.isArray(dbDesp)) setDespesasFixas(dbDesp);
       if (dbLogs && Array.isArray(dbLogs)) setLogs(dbLogs);
       if (dbMetaDiaria !== null && dbMetaDiaria !== undefined && !Number.isNaN(Number(dbMetaDiaria))) setMetaDiaria(Math.max(0, Number(dbMetaDiaria)));
+      if (dbPecasEstoque && Array.isArray(dbPecasEstoque)) setPecasEstoque(dbPecasEstoque);
       if (typeof dbDark === "boolean") setDarkMode(dbDark);
       // Session: localStorage — each device keeps its own session
       try {
@@ -10896,6 +12029,10 @@ function App() {
     setPrepCategorias(normalized);
     await sbSet("prep_categorias", normalized);
   }
+  async function savePecasEstoque(lista) {
+    setPecasEstoque(lista);
+    await sbSet("pecas_estoque", lista);
+  }
   async function saveMetaDiaria(v) {
     const n = Math.max(0, Number(v) || 0);
     setMetaDiaria(n);
@@ -10915,6 +12052,7 @@ function App() {
     setView("dashboard");
     setSelectedCar(null);
     setCarDetailTab("overview");
+    setReturnTarget(null);
     try { localStorage.removeItem("premier_session"); } catch(e) {}
   }
   async function toggleDark() {
@@ -10922,22 +12060,96 @@ function App() {
     setDarkMode(nd);
     await sbSet("dark_mode", nd);
   }
-  function handleRefresh() {
+  function handleRefresh(opts = {}) {
     loadAll();
-    pushNotif("🔄 Dados atualizados", "success");
+    if (!opts.silent) pushNotif("🔄 Dados atualizados", "success");
   }
-  function openCar(car, tab = "overview") {
+  function rememberDashboardScroll() {
+    try {
+      if (view === "dashboard") dashboardScrollRef.current = window.scrollY || 0;
+    } catch (e) {}
+  }
+  function showDashboard(opts = {}) {
+    if (opts.restore) restoreDashboardScrollRef.current = true;
+    setView("dashboard");
+  }
+  function closeToDashboard() {
+    setCatalogRoute(false);
+    setSelectedCar(null);
+    setCarDetailTab("overview");
+    setReturnTarget(null);
+    setShowSuppliers(false);
+    setShowPrestadores(false);
+    setShowUsers(false);
+    setShowChangePass(false);
+    setShowRelatorio(false);
+    setShowDespesas(false);
+    setShowNotifs(false);
+    setShowPesquisaPlaca(false);
+    setShowLogistica(false);
+    setShowPendencias(false);
+    setShowPecasPendentes(false);
+    setShowPrepCategorias(false);
+    dashboardScrollRef.current = 0;
+    setView("dashboard");
+    setTimeout(() => {
+      try {
+        window.scrollTo({
+          top: 0,
+          behavior: "instant"
+        });
+      } catch (e) {
+        window.scrollTo(0, 0);
+      }
+    }, 0);
+  }
+  function openCar(car, tab = "overview", backTarget = null) {
+    rememberDashboardScroll();
     setSelectedCar(car);
     setCarDetailTab(tab || "overview");
+    setReturnTarget(backTarget);
     setView("carDetail");
+    setTimeout(() => {
+      try {
+        window.scrollTo({
+          top: 0,
+          behavior: "instant"
+        });
+      } catch (e) {
+        window.scrollTo(0, 0);
+      }
+    }, 0);
   }
   function openCatalogo() {
+    rememberDashboardScroll();
     setCatalogRoute(true);
     setView("catalogo");
   }
   function closeCatalogo() {
     setCatalogRoute(false);
-    setView("dashboard");
+    if (returnTarget) {
+      setView(returnTarget);
+    } else {
+      showDashboard({
+        restore: true
+      });
+    }
+    setReturnTarget(null);
+  }
+  function backFromCarDetail() {
+    const target = returnTarget;
+    setSelectedCar(null);
+    setCarDetailTab("overview");
+    setReturnTarget(null);
+    if (target === "garantias") return setView("garantias");
+    if (target === "modoTV") return setView("modoTV");
+    showDashboard({
+      restore: true
+    });
+    if (target === "pecas") setShowPecasPendentes(true);
+    if (target === "pendencias") setShowPendencias(true);
+    if (target === "logistica") setShowLogistica(true);
+    if (target === "pesquisa") setShowPesquisaPlaca(true);
   }
   function clearLogs() {
     setLogs([]);
@@ -10951,7 +12163,8 @@ function App() {
     cars: cars,
     users: users,
     user: user,
-    onBack: closeCatalogo
+    onBack: closeCatalogo,
+    onHome: closeToDashboard
   }), /*#__PURE__*/React.createElement(NotifToasts, {
     notifs: notifs
   }));
@@ -10961,7 +12174,10 @@ function App() {
   });
   if (view === "addCar") return /*#__PURE__*/React.createElement("div", commonProps, /*#__PURE__*/React.createElement(AddCarForm, {
     user: user,
-    onBack: () => setView("dashboard"),
+    onBack: () => showDashboard({
+      restore: true
+    }),
+    onHome: closeToDashboard,
     onSave: car => {
       const norm = s => (s || "").replace(/[^a-zA-Z0-9]/g, "").toUpperCase();
       const np = norm(car.plate);
@@ -10984,11 +12200,8 @@ function App() {
     suppliers: suppliers,
     prestadores: prestadores,
     initialTab: carDetailTab,
-    onBack: () => {
-      setView("dashboard");
-      setSelectedCar(null);
-      setCarDetailTab("overview");
-    },
+    onBack: backFromCarDetail,
+    onHome: closeToDashboard,
     onSave: updated => {
       saveCar(updated);
       setSelectedCar(updated);
@@ -11002,9 +12215,7 @@ function App() {
     onDelete: id => {
       const car = cars.find(c => c.id === id);
       removeCar(id);
-      setView("dashboard");
-      setSelectedCar(null);
-      setCarDetailTab("overview");
+      closeToDashboard();
       pushNotif("🗑 Veículo removido", "warning");
       if (car) pushLog(`Veículo removido: ${car.marca || ""} ${car.name}`, user.name, "warning");
     }
@@ -11021,8 +12232,23 @@ function App() {
   }));
   if (view === "garantias") return /*#__PURE__*/React.createElement("div", commonProps, /*#__PURE__*/React.createElement(GarantiasScreen, {
     cars: cars,
-    onBack: () => setView("dashboard"),
-    onSelectCar: car => openCar(car)
+    onBack: () => showDashboard({
+      restore: true
+    }),
+    onHome: closeToDashboard,
+    onSelectCar: car => openCar(car, "overview", "garantias")
+  }), /*#__PURE__*/React.createElement(NotifToasts, {
+    notifs: notifs
+  }));
+  if (view === "modoTV") return /*#__PURE__*/React.createElement("div", commonProps, /*#__PURE__*/React.createElement(ModoTVScreen, {
+    cars: cars,
+    metaDiaria: metaDiaria,
+    onBack: () => showDashboard({
+      restore: true
+    }),
+    onHome: closeToDashboard,
+    onRefresh: handleRefresh,
+    onSelectCar: car => openCar(car, "overview", "modoTV")
   }), /*#__PURE__*/React.createElement(NotifToasts, {
     notifs: notifs
   }));
@@ -11037,11 +12263,17 @@ function App() {
     onLogout: logout,
     onRefresh: handleRefresh,
     onSelectCar: car => openCar(car),
-    onAddCar: () => setView("addCar"),
+    onAddCar: () => {
+      rememberDashboardScroll();
+      setView("addCar");
+    },
     onOpenSuppliers: () => setShowSuppliers(true),
     onOpenUsers: () => setShowUsers(true),
     onOpenChangePass: () => setShowChangePass(true),
-    onOpenGarantias: () => setView("garantias"),
+    onOpenGarantias: () => {
+      rememberDashboardScroll();
+      setView("garantias");
+    },
     onOpenRelatorio: () => setShowRelatorio(true),
     onOpenDespesas: () => setShowDespesas(true),
     onOpenNotifs: () => setShowNotifs(true),
@@ -11052,6 +12284,12 @@ function App() {
     onOpenPecasPendentes: () => setShowPecasPendentes(true),
     onOpenPrepCategorias: () => setShowPrepCategorias(true),
     onOpenCatalogo: openCatalogo,
+    onOpenModoTV: () => {
+      rememberDashboardScroll();
+      setView("modoTV");
+    },
+    dashboardState: dashboardState,
+    onDashboardStateChange: setDashboardState,
     metaDiaria: metaDiaria,
     onChangeMetaDiaria: saveMetaDiaria
   }), showSuppliers && CAN.suppliers(user.role) && /*#__PURE__*/React.createElement(SuppliersModal, {
@@ -11089,21 +12327,23 @@ function App() {
     onClose: () => setShowDespesas(false)
   }), showPesquisaPlaca && /*#__PURE__*/React.createElement(PesquisaPlacaModal, {
     cars: cars,
-    onSelectCar: car => { openCar(car); setShowPesquisaPlaca(false); },
+    onSelectCar: car => { openCar(car, "overview", "pesquisa"); setShowPesquisaPlaca(false); },
     onClose: () => setShowPesquisaPlaca(false)
   }), showLogistica && /*#__PURE__*/React.createElement(LogisticaModal, {
     cars: cars,
     prestadores: prestadores,
-    onSelectCar: car => { openCar(car); setShowLogistica(false); },
+    onSelectCar: car => { openCar(car, "overview", "logistica"); setShowLogistica(false); },
     onClose: () => setShowLogistica(false)
   }), showPendencias && /*#__PURE__*/React.createElement(CentroPendenciasModal, {
     cars: cars,
-    onSelectCar: car => { openCar(car); setShowPendencias(false); },
+    onSelectCar: car => { openCar(car, "overview", "pendencias"); setShowPendencias(false); },
     onClose: () => setShowPendencias(false)
   }), showPecasPendentes && /*#__PURE__*/React.createElement(PecasPendentesModal, {
     cars: cars,
     user: user,
-    onSelectCar: (car, tab) => { openCar(car, tab || "pecas"); setShowPecasPendentes(false); },
+    estoque: pecasEstoque,
+    onChangeEstoque: savePecasEstoque,
+    onSelectCar: (car, tab) => { openCar(car, tab || "pecas", "pecas"); setShowPecasPendentes(false); },
     onUpdateCar: updated => {
       saveCar(updated);
       if (selectedCar && selectedCar.id === updated.id) setSelectedCar(updated);
