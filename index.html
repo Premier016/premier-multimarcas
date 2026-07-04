@@ -1773,6 +1773,13 @@ function Modal({
   children,
   width = 600
 }) {
+  useEffect(() => {
+    function onKey(e) {
+      if (e.key === "Escape" && onClose) onClose();
+    }
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [onClose]);
   return /*#__PURE__*/React.createElement("div", {
     style: {
       position: "fixed",
@@ -1851,7 +1858,24 @@ function Modal({
 function BottomNav({
   items
 }) {
+  // Com muitas abas (ficha do carro), vira barra rolável para cada botão
+  // manter área de toque decente; com poucas (dashboard), divide a largura.
+  const scrollable = items.length > 6;
+  const navRef = useRef(null);
+  const activeKey = (items.find(it => it.active) || {}).k;
+  useEffect(() => {
+    if (!scrollable || !navRef.current) return;
+    try {
+      const el = navRef.current.querySelector('[data-navactive="1"]');
+      if (el && el.scrollIntoView) el.scrollIntoView({
+        block: "nearest",
+        inline: "center",
+        behavior: "smooth"
+      });
+    } catch (e) {}
+  }, [activeKey, scrollable]);
   return /*#__PURE__*/React.createElement("nav", {
+    ref: navRef,
     style: {
       position: "fixed",
       bottom: 0,
@@ -1861,13 +1885,17 @@ function BottomNav({
       borderTop: `1px solid ${C.border}`,
       display: "flex",
       zIndex: 200,
-      paddingBottom: "env(safe-area-inset-bottom,0px)"
+      paddingBottom: "env(safe-area-inset-bottom,0px)",
+      overflowX: scrollable ? "auto" : "visible",
+      WebkitOverflowScrolling: "touch",
+      scrollbarWidth: "none"
     }
   }, items.map(it => /*#__PURE__*/React.createElement("button", {
     key: it.k,
+    "data-navactive": it.active ? "1" : "0",
     onClick: it.fn,
     style: {
-      flex: 1,
+      flex: scrollable ? "0 0 auto" : 1,
       padding: "9px 2px 7px",
       background: "none",
       border: "none",
@@ -1876,13 +1904,30 @@ function BottomNav({
       flexDirection: "column",
       alignItems: "center",
       gap: 2,
-      minWidth: 0
+      minWidth: scrollable ? 68 : 0
     }
   }, /*#__PURE__*/React.createElement("span", {
     style: {
-      fontSize: 18
+      fontSize: 18,
+      position: "relative"
     }
-  }, it.icon), /*#__PURE__*/React.createElement("span", {
+  }, it.icon, it.badge > 0 && /*#__PURE__*/React.createElement("span", {
+    style: {
+      position: "absolute",
+      top: -4,
+      right: -12,
+      background: C.red,
+      color: "#fff",
+      borderRadius: 9,
+      minWidth: 15,
+      height: 15,
+      padding: "0 3px",
+      fontSize: 9,
+      fontWeight: 800,
+      lineHeight: "15px",
+      textAlign: "center"
+    }
+  }, it.badge > 9 ? "9+" : it.badge)), /*#__PURE__*/React.createElement("span", {
     style: {
       fontSize: 9,
       color: it.active ? C.red : C.textMuted,
@@ -1892,7 +1937,7 @@ function BottomNav({
       whiteSpace: "nowrap",
       overflow: "hidden",
       textOverflow: "ellipsis",
-      maxWidth: 50
+      maxWidth: scrollable ? 76 : 50
     }
   }, it.label), it.active && /*#__PURE__*/React.createElement("span", {
     style: {
@@ -7701,9 +7746,35 @@ function CarDetail({
         ...p,
         [k]: v
       };
+      if (k === "status" && v === "Vendido" && p.status !== "Vendido") {
+        if (!window.confirm("Registrar venda deste veículo? Data de venda e garantia de 3 meses serão preenchidas automaticamente.")) return p;
+        const dv = p.dataVenda || todayISO();
+        n = {
+          ...n,
+          dataVenda: dv,
+          garantiaAte: p.garantiaAte || addMonths(dv, 3)
+        };
+      }
       if (k === "status") {
         n = addHist(n, `Status: ${v}`);
         pushNotif(`📋 ${v}`);
+      }
+      if (k === "loja" && v && v !== (p.loja || "Premier Multimarcas")) {
+        const lojaAnterior = p.loja || "Premier Multimarcas";
+        const responsavelMovimento = (window.prompt && window.prompt(`Quem levou/trouxe o carro de ${lojaAnterior} para ${v}?`, user.name)) || user.name;
+        const movimentoLoja = {
+          id: uid(),
+          de: lojaAnterior,
+          para: v,
+          responsavel: responsavelMovimento,
+          registradoPor: user.name,
+          em: nowStr()
+        };
+        n = addHist({
+          ...n,
+          movimentacoesLoja: [...(p.movimentacoesLoja || []), movimentoLoja]
+        }, `Transferência de loja: ${lojaAnterior} → ${v}. Responsável: ${responsavelMovimento}. Registrado por ${user.name}`);
+        pushNotif(`📍 Loja alterada: ${lojaAnterior} → ${v}`, "info");
       }
       if (k === "prestadorAtual" && p.prestadorAtual && p.prestadorAtual !== "Sem prestador" && v && v !== "Sem prestador" && v !== p.prestadorAtual) {
         pushNotif("Faça o checklist de saída antes de trocar de prestador.", "warning");
@@ -10618,12 +10689,37 @@ function ModoTVScreen({
   onRefresh
 }) {
   const E = React.createElement;
+  const colunasTVPadrao = [{
+    key: "prioridade",
+    title: "PRIORIDADE DO DIA",
+    accent: C.red,
+    active: true
+  }, {
+    key: "atrasos",
+    title: "PRESTADORES ATRASADOS",
+    accent: C.error,
+    active: true
+  }, {
+    key: "pecas",
+    title: "PEÇAS PARA AGIR",
+    accent: C.warning,
+    active: true
+  }, {
+    key: "movimentos",
+    title: "MOVIMENTOS RECENTES",
+    accent: C.success,
+    active: true
+  }];
   const [, setClock] = useState(Date.now());
   const [lastSync, setLastSync] = useState(new Date());
   const [narracaoAtiva, setNarracaoAtiva] = useState(false);
+  const [editarColunasTV, setEditarColunasTV] = useState(false);
+  const [colunasTV, setColunasTV] = useState(() => carregarColunasTV(colunasTVPadrao));
+  const [cardsMovidosTV, setCardsMovidosTV] = useState(() => carregarCardsMovidosTV());
   const refreshRef = useRef(onRefresh);
   const narracaoRef = useRef(false);
   const falasNarradasRef = useRef({});
+  const dragTVRef = useRef(null);
   useEffect(() => {
     const timer = setInterval(() => setClock(Date.now()), 60000);
     return () => clearInterval(timer);
@@ -10635,6 +10731,20 @@ function ModoTVScreen({
     narracaoRef.current = narracaoAtiva;
     if (!narracaoAtiva && suporteVozTV()) window.speechSynthesis.cancel();
   }, [narracaoAtiva]);
+  useEffect(() => {
+    try {
+      localStorage.setItem("premier_modo_tv_colunas_v1", JSON.stringify(colunasTV.map(c => ({
+        key: c.key,
+        title: c.title,
+        active: c.active
+      }))));
+    } catch (e) {}
+  }, [colunasTV]);
+  useEffect(() => {
+    try {
+      localStorage.setItem("premier_modo_tv_cards_v1", JSON.stringify(cardsMovidosTV));
+    } catch (e) {}
+  }, [cardsMovidosTV]);
   useEffect(() => {
     const timer = setInterval(() => {
       if (refreshRef.current) refreshRef.current({
@@ -10669,6 +10779,71 @@ function ModoTVScreen({
     if (car.status === "Aguardando Aprovação") return "Conferir e aprovar";
     if (car.status === "Pronto para Venda") return "Disponível para venda";
     return car.status || "Acompanhar";
+  }
+  function carregarColunasTV(padroes) {
+    try {
+      const raw = localStorage.getItem("premier_modo_tv_colunas_v1");
+      if (!raw) return padroes;
+      const salvas = JSON.parse(raw);
+      if (!Array.isArray(salvas)) return padroes;
+      const porKey = {};
+      salvas.forEach((c, idx) => {
+        if (c && c.key) porKey[c.key] = {
+          ...c,
+          ordem: idx
+        };
+      });
+      return padroes.map((p, idx) => ({
+        ...p,
+        title: (porKey[p.key] && porKey[p.key].title) || p.title,
+        active: porKey[p.key] ? porKey[p.key].active !== false : p.active,
+        ordem: porKey[p.key] ? porKey[p.key].ordem : idx
+      })).sort((a, b) => a.ordem - b.ordem).map((c, idx) => ({
+        ...c,
+        ordem: idx
+      }));
+    } catch (e) {
+      return padroes;
+    }
+  }
+  function carregarCardsMovidosTV() {
+    try {
+      const raw = localStorage.getItem("premier_modo_tv_cards_v1");
+      const parsed = raw ? JSON.parse(raw) : {};
+      return parsed && typeof parsed === "object" && !Array.isArray(parsed) ? parsed : {};
+    } catch (e) {
+      return {};
+    }
+  }
+  function toggleColunaTV(key) {
+    setColunasTV(prev => {
+      const next = prev.map(c => c.key === key ? {
+        ...c,
+        active: !c.active
+      } : c);
+      return next.some(c => c.active) ? next : prev;
+    });
+  }
+  function renomearColunaTV(key, title) {
+    setColunasTV(prev => prev.map(c => c.key === key ? {
+      ...c,
+      title: title.slice(0, 32)
+    } : c));
+  }
+  function moverColunaTV(key, dir) {
+    setColunasTV(prev => {
+      const idx = prev.findIndex(c => c.key === key);
+      const alvo = idx + dir;
+      if (idx < 0 || alvo < 0 || alvo >= prev.length) return prev;
+      const next = [...prev];
+      const [item] = next.splice(idx, 1);
+      next.splice(alvo, 0, item);
+      return next;
+    });
+  }
+  function resetarColunasTV() {
+    setColunasTV(colunasTVPadrao);
+    setCardsMovidosTV({});
   }
   const dados = ativos.map(car => {
     const p = pendenciasDoCarro(car);
@@ -10764,6 +10939,23 @@ function ModoTVScreen({
     }))
   ].slice(0, 10);
   const movimentosPainel = movimentos.slice(0, 9);
+  const dadosPorIdTV = {};
+  dados.forEach(item => {
+    dadosPorIdTV[item.car.id] = item;
+  });
+  const idsMovidosTV = new Set(Object.keys(cardsMovidosTV).filter(id => dadosPorIdTV[id]));
+  const prioridadesBaseTV = prioridadesPainel.filter(item => !idsMovidosTV.has(item.car.id));
+  const atrasosBaseTV = atrasosPainel.filter(item => !idsMovidosTV.has(item.car.id));
+  const pecasBaseTV = pecasPainel.filter(item => !idsMovidosTV.has(item.car.id));
+  const movimentosBaseTV = movimentosPainel.filter(m => !idsMovidosTV.has(m.car.id));
+  const colunasAtivasTV = colunasTV.filter(c => c.active);
+  function manuaisColunaTV(key) {
+    return Object.keys(cardsMovidosTV).filter(id => cardsMovidosTV[id] === key && dadosPorIdTV[id]).map(id => ({
+      ...dadosPorIdTV[id],
+      manualTV: true,
+      passo: `Urgência manual: ${dadosPorIdTV[id].passo}`
+    }));
+  }
   const narracaoHash = [
     prestadoresAtrasados.slice(0, 2).map(x => `${x.car.id}:${x.p.prazoPrestador}`).join("|"),
     pecasInstalar.slice(0, 2).map(x => `${x.car.id}:${x.peca.id || x.peca.nome}`).join("|"),
@@ -10874,6 +11066,34 @@ function ModoTVScreen({
       if (narracaoRef.current) narrarEventosImportantes(true);
     }, 1200);
   }
+  function iniciarArrastoTV(e, car, origem) {
+    dragTVRef.current = {
+      carId: car.id,
+      origem
+    };
+    if (e && e.dataTransfer) {
+      e.dataTransfer.effectAllowed = "move";
+      e.dataTransfer.setData("text/plain", car.id);
+    }
+  }
+  function permitirSoltarTV(e) {
+    if (e && e.preventDefault) e.preventDefault();
+    if (e && e.dataTransfer) e.dataTransfer.dropEffect = "move";
+  }
+  function soltarCardTV(e, key) {
+    if (e && e.preventDefault) e.preventDefault();
+    const viaEvento = e && e.dataTransfer ? e.dataTransfer.getData("text/plain") : "";
+    const carId = viaEvento || dragTVRef.current && dragTVRef.current.carId;
+    if (!carId || !dadosPorIdTV[carId]) return;
+    setCardsMovidosTV(prev => ({
+      ...prev,
+      [carId]: key
+    }));
+    dragTVRef.current = null;
+  }
+  function limparUrgenciasTV() {
+    setCardsMovidosTV({});
+  }
   function MiniBadge(label, col) {
     return E("span", {
       style: {
@@ -10918,15 +11138,20 @@ function ModoTVScreen({
       }
     }, text);
   }
-  function TVPanel(title, accent, count, children) {
+  function TVPanel(col, count, children) {
+    const title = col.title;
+    const accent = col.accent;
     return E("section", {
+      key: col.key,
+      onDragOver: permitirSoltarTV,
+      onDrop: e => soltarCardTV(e, col.key),
       style: {
         background: C.card,
         border: `1px solid ${accent}35`,
         borderRadius: 12,
         padding: 12,
         minWidth: 0,
-        height: "calc(100vh - 184px)",
+        height: editarColunasTV ? "calc(100vh - 314px)" : "calc(100vh - 184px)",
         overflow: "hidden",
         display: "flex",
         flexDirection: "column"
@@ -11026,6 +11251,9 @@ function ModoTVScreen({
     return E("button", {
       key: car.id,
       onClick: () => onSelectCar && onSelectCar(car),
+      draggable: true,
+      onDragStart: e => iniciarArrastoTV(e, car, "carro"),
+      title: "Arrastar para outra coluna",
       style: {
         width: "100%",
         background: C.bg,
@@ -11081,7 +11309,7 @@ function ModoTVScreen({
         flexWrap: "wrap",
         marginTop: 6
       }
-    }, MiniBadge(car.status || "Status", statusCol), item.p.emPrestador && MiniBadge(car.prestadorAtual || "Prestador", item.p.atrasado ? C.error : C.warning)), E("div", {
+    }, item.manualTV && MiniBadge("Urgência", C.warning), MiniBadge(car.status || "Status", statusCol), item.p.emPrestador && MiniBadge(car.prestadorAtual || "Prestador", item.p.atrasado ? C.error : C.warning)), E("div", {
       style: {
         marginTop: 7
       }
@@ -11108,6 +11336,9 @@ function ModoTVScreen({
     return E("button", {
       key: car.id,
       onClick: () => onSelectCar && onSelectCar(car),
+      draggable: true,
+      onDragStart: e => iniciarArrastoTV(e, car, "atrasos"),
+      title: "Arrastar para outra coluna",
       style: {
         width: "100%",
         background: C.error + "08",
@@ -11157,6 +11388,9 @@ function ModoTVScreen({
     return E("button", {
       key: `${item.car.id}-${item.peca.id || item.peca.nome}-${idx}`,
       onClick: () => onSelectCar && onSelectCar(item.car),
+      draggable: true,
+      onDragStart: e => iniciarArrastoTV(e, item.car, "pecas"),
+      title: "Arrastar para outra coluna",
       style: {
         width: "100%",
         background: item.col + "08",
@@ -11217,6 +11451,9 @@ function ModoTVScreen({
     return E("button", {
       key: `${m.car.id}-${m.h.id || idx}`,
       onClick: () => onSelectCar && onSelectCar(m.car),
+      draggable: true,
+      onDragStart: e => iniciarArrastoTV(e, m.car, "movimentos"),
+      title: "Arrastar para outra coluna",
       style: {
         width: "100%",
         background: C.bg,
@@ -11260,6 +11497,129 @@ function ModoTVScreen({
         marginTop: 2
       }
     }, m.h.em || "")));
+  }
+  function EditorColunasTV() {
+    const totalMovidos = idsMovidosTV.size;
+    return E("div", {
+      style: {
+        background: C.card,
+        border: `1px solid ${C.border}`,
+        borderRadius: 12,
+        padding: 10,
+        display: "grid",
+        gridTemplateColumns: "repeat(auto-fit,minmax(230px,1fr))",
+        gap: 8
+      }
+    }, colunasTV.map((col, idx) => E("div", {
+      key: col.key,
+      style: {
+        border: `1px solid ${col.accent}35`,
+        borderRadius: 10,
+        padding: 8,
+        display: "grid",
+        gridTemplateColumns: "24px minmax(0,1fr) 32px 32px",
+        gap: 6,
+        alignItems: "center",
+        background: col.active ? col.accent + "08" : C.bg
+      }
+    }, E("input", {
+      type: "checkbox",
+      checked: !!col.active,
+      onChange: () => toggleColunaTV(col.key),
+      style: {
+        width: 18,
+        height: 18,
+        accentColor: col.accent
+      }
+    }), E("input", {
+      value: col.title,
+      onChange: e => renomearColunaTV(col.key, e.target.value),
+      style: {
+        width: "100%",
+        background: C.bg,
+        border: `1px solid ${C.border}`,
+        borderRadius: 8,
+        color: C.text,
+        padding: "7px 8px",
+        fontSize: 11,
+        fontWeight: 900
+      }
+    }), E("button", {
+      onClick: () => moverColunaTV(col.key, -1),
+      disabled: idx === 0,
+      style: {
+        height: 32,
+        border: `1px solid ${C.border}`,
+        borderRadius: 8,
+        background: C.bg,
+        color: idx === 0 ? C.textDim : C.text,
+        cursor: idx === 0 ? "default" : "pointer",
+        fontWeight: 950
+      }
+    }, "←"), E("button", {
+      onClick: () => moverColunaTV(col.key, 1),
+      disabled: idx === colunasTV.length - 1,
+      style: {
+        height: 32,
+        border: `1px solid ${C.border}`,
+        borderRadius: 8,
+        background: C.bg,
+        color: idx === colunasTV.length - 1 ? C.textDim : C.text,
+        cursor: idx === colunasTV.length - 1 ? "default" : "pointer",
+        fontWeight: 950
+      }
+    }, "→"))), E("div", {
+      style: {
+        display: "flex",
+        gap: 8,
+        alignItems: "center",
+        flexWrap: "wrap"
+      }
+    }, E("button", {
+      onClick: resetarColunasTV,
+      style: {
+        background: C.bg,
+        border: `1px solid ${C.border}`,
+        borderRadius: 9,
+        color: C.text,
+        padding: "8px 10px",
+        cursor: "pointer",
+        fontWeight: 900
+      }
+    }, "Padrão"), E("button", {
+      onClick: limparUrgenciasTV,
+      disabled: totalMovidos === 0,
+      style: {
+        background: totalMovidos ? C.warning + "14" : C.bg,
+        border: `1px solid ${totalMovidos ? C.warning + "55" : C.border}`,
+        borderRadius: 9,
+        color: totalMovidos ? C.warning : C.textDim,
+        padding: "8px 10px",
+        cursor: totalMovidos ? "pointer" : "default",
+        fontWeight: 900
+      }
+    }, totalMovidos ? `Limpar urgências (${totalMovidos})` : "Sem urgências")));
+  }
+  function conteudoColunaTV(col) {
+    const manuais = manuaisColunaTV(col.key);
+    let children = [];
+    if (col.key === "prioridade") {
+      children = [...manuais.map(item => CarRow(item)), ...prioridadesBaseTV.map(item => CarRow(item))];
+    } else if (col.key === "atrasos") {
+      children = [...manuais.map(item => CarRow(item)), ...atrasosBaseTV.map(item => AtrasoRow(item))];
+    } else if (col.key === "pecas") {
+      children = [...manuais.map(item => CarRow(item)), ...pecasBaseTV.map((item, idx) => PecaRow(item, idx))];
+    } else if (col.key === "movimentos") {
+      children = [...manuais.map(item => CarRow(item)), ...movimentosBaseTV.map((m, idx) => MovimentoRow(m, idx))];
+    }
+    return {
+      count: children.length,
+      children: children.length ? children : EmptyTV("Sem card nesta coluna agora.")
+    };
+  }
+  function renderColunaTV(col) {
+    const conteudo = conteudoColunaTV(col);
+    return TVPanel(col, conteudo.count, conteudo.children);
   }
   return E("div", {
     style: {
@@ -11332,6 +11692,17 @@ function ModoTVScreen({
       fontWeight: 900
     }
   }, narracaoAtiva ? "🔊 Narração" : "🔇 Narração"), E("button", {
+    onClick: () => setEditarColunasTV(v => !v),
+    style: {
+      background: editarColunasTV ? C.info : C.card,
+      border: editarColunasTV ? "none" : `1px solid ${C.border}`,
+      borderRadius: 10,
+      color: editarColunasTV ? "#fff" : C.text,
+      padding: "9px 12px",
+      cursor: "pointer",
+      fontWeight: 900
+    }
+  }, "Colunas"), E("button", {
     onClick: onRefresh,
     style: {
       background: C.card,
@@ -11403,14 +11774,14 @@ function ModoTVScreen({
       marginTop: 5,
       fontWeight: 850
     }
-  }, s.l)))), E("div", {
+  }, s.l)))), editarColunasTV && EditorColunasTV(), E("div", {
     style: {
       display: "grid",
       gridTemplateColumns: "repeat(auto-fit,minmax(300px,1fr))",
       gap: 10,
       alignItems: "start"
     }
-  }, TVPanel("PRIORIDADE DO DIA", C.red, prioridadesPainel.length, prioridadesPainel.length ? prioridadesPainel.map(item => CarRow(item)) : EmptyTV("Sem prioridade crítica agora.")), TVPanel("PRESTADORES ATRASADOS", C.error, atrasosPainel.length, atrasosPainel.length ? atrasosPainel.map(item => AtrasoRow(item)) : EmptyTV("Nenhum prestador atrasado.")), TVPanel("PEÇAS PARA AGIR", C.warning, pecasPainel.length, pecasPainel.length ? pecasPainel.map((item, idx) => PecaRow(item, idx)) : EmptyTV("Sem peça urgente agora.")), TVPanel("MOVIMENTOS RECENTES", C.success, movimentosPainel.length, movimentosPainel.length ? movimentosPainel.map((m, idx) => MovimentoRow(m, idx)) : EmptyTV("Sem movimentação recente.")))));
+  }, colunasAtivasTV.map(col => renderColunaTV(col)))));
 }
 
 // ═══ DASHBOARD ══════════════════════════════════════════════════
@@ -11451,6 +11822,13 @@ function Dashboard({
   const [fLoja, setFLoja] = useState(dashboardState.fLoja || "Todas");
   const [verVendidos, setVerVendidos] = useState(!!dashboardState.verVendidos);
   const [showMenu, setShowMenu] = useState(false);
+  // Meta diária: edita localmente e só grava no banco após pausa na digitação
+  const [metaLocal, setMetaLocal] = useState(() => String(Math.max(0, Number(metaDiaria) || 0)));
+  const metaTimer = useRef(null);
+  useEffect(() => {
+    setMetaLocal(String(Math.max(0, Number(metaDiaria) || 0)));
+  }, [metaDiaria]);
+  useEffect(() => () => clearTimeout(metaTimer.current), []);
   useEffect(() => {
     if (!onDashboardStateChange) return;
     onDashboardStateChange({
@@ -11468,7 +11846,7 @@ function Dashboard({
   const metaNum = Math.max(0, Number(metaDiaria) || 0);
   const liberadosHoje = cars.filter(c => c.status !== "Vendido" && ((c.aprovadoEm || "").startsWith(hojeBR) || (c.historico || []).some(h => (h.em || "").startsWith(hojeBR) && ((h.acao || "").includes("Aprovado") || (h.acao || "").includes("Pronto para Venda"))))).length;
   const faltamLiberar = Math.max(0, metaNum - liberadosHoje);
-  const emPreparacaoHoje = cars.filter(c => c.status === "Em Preparação" || c.status === "Aguardando Aprovação").length;
+  const emPreparacaoHoje = cars.filter(c => c.status === "Em Preparação").length;
   const prioridadesHoje = cars.filter(c => c.status !== "Vendido" && c.status !== "Pronto para Venda").map(c => {
     const p = pendenciasDoCarro(c);
     const s = saudePreparacao(c);
@@ -11581,7 +11959,22 @@ function Dashboard({
     k: "home",
     icon: "🏠",
     label: "Início",
-    fn: () => {}
+    fn: () => {
+      const noTopo = (window.scrollY || 0) < 10;
+      const temFiltro = search || fStatus !== "Todos" || fLoja !== "Todas" || verVendidos;
+      if (noTopo && temFiltro) {
+        setSearch("");
+        setFStatus("Todos");
+        setFLoja("Todas");
+        setVerVendidos(false);
+        pushNotif("🧹 Busca e filtros limpos", "info");
+      } else {
+        window.scrollTo({
+          top: 0,
+          behavior: "smooth"
+        });
+      }
+    }
   }, {
     k: "add",
     icon: "➕",
@@ -11595,7 +11988,8 @@ function Dashboard({
   }, {
     k: "notif",
     icon: "🔔",
-    label: logCount > 9 ? "9+" : "Avisos",
+    label: "Avisos",
+    badge: logCount,
     fn: onOpenNotifs
   }, {
     k: "menu",
@@ -11736,8 +12130,13 @@ function Dashboard({
   }, "Prioridade da operação hoje")), /*#__PURE__*/React.createElement("input", {
     type: "number",
     min: 0,
-    value: metaNum,
-    onChange: e => onChangeMetaDiaria && onChangeMetaDiaria(e.target.value),
+    value: metaLocal,
+    onChange: e => {
+      const v = e.target.value;
+      setMetaLocal(v);
+      clearTimeout(metaTimer.current);
+      metaTimer.current = setTimeout(() => onChangeMetaDiaria && onChangeMetaDiaria(v), 800);
+    },
     style: {
       width: 62,
       background: C.bg,
@@ -11838,7 +12237,12 @@ function Dashboard({
       fontSize: 11,
       fontWeight: 900
     }
-  }, item.score))))), /*#__PURE__*/React.createElement("input", {
+  }, item.score))))), /*#__PURE__*/React.createElement("div", {
+    style: {
+      position: "relative",
+      marginBottom: 7
+    }
+  }, /*#__PURE__*/React.createElement("input", {
     placeholder: "\uD83D\uDD0D  Buscar por nome, marca ou placa...",
     value: search,
     onChange: e => setSearch(e.target.value),
@@ -11848,14 +12252,33 @@ function Dashboard({
       border: `1px solid ${C.border}`,
       borderRadius: 9,
       padding: "9px 13px",
+      paddingRight: 36,
       color: C.text,
       fontSize: 13,
       fontFamily: "inherit",
       outline: "none",
-      marginBottom: 7,
       boxSizing: "border-box"
     }
-  }), /*#__PURE__*/React.createElement("div", {
+  }), search && /*#__PURE__*/React.createElement("button", {
+    onClick: () => setSearch(""),
+    title: "Limpar busca",
+    style: {
+      position: "absolute",
+      right: 8,
+      top: "50%",
+      transform: "translateY(-50%)",
+      background: C.border + "66",
+      border: "none",
+      borderRadius: "50%",
+      width: 22,
+      height: 22,
+      color: C.textMuted,
+      cursor: "pointer",
+      fontSize: 11,
+      lineHeight: 1,
+      padding: 0
+    }
+  }, "\u2715")), /*#__PURE__*/React.createElement("div", {
     style: {
       display: "flex",
       gap: 6,
@@ -12163,6 +12586,60 @@ function App() {
     } catch (e) {}
     setDeepLinkDone(true);
   }, [ready, user, cars, deepLinkDone]);
+  // Botão voltar nativo (Android/navegador): fecha a camada mais acima,
+  // espelhando os botões de voltar da tela, sem sair do app.
+  const backHandlerRef = useRef(null);
+  backHandlerRef.current = () => {
+    if (showNotifs) return setShowNotifs(false);
+    if (showPesquisaPlaca) return setShowPesquisaPlaca(false);
+    if (showLogistica) return setShowLogistica(false);
+    if (showPendencias) return setShowPendencias(false);
+    if (showPecasPendentes) return setShowPecasPendentes(false);
+    if (showPrepCategorias) return setShowPrepCategorias(false);
+    if (showRelatorio) return setShowRelatorio(false);
+    if (showDespesas) return setShowDespesas(false);
+    if (showChangePass) return setShowChangePass(false);
+    if (showUsers) return setShowUsers(false);
+    if (showPrestadores) return setShowPrestadores(false);
+    if (showSuppliers) return setShowSuppliers(false);
+    if (view === "catalogo") {
+      if (returnTarget) {
+        setView(returnTarget);
+      } else {
+        showDashboard({ restore: true });
+      }
+      setReturnTarget(null);
+      try {
+        if (isCatalogRoute()) window.history.replaceState({}, "", window.location.pathname);
+      } catch (e) {}
+      return;
+    }
+    if (view === "carDetail") return backFromCarDetail();
+    if (view === "addCar" || view === "garantias" || view === "modoTV") return showDashboard({ restore: true });
+    // Já está no início: apenas limpa rota de catálogo que tenha sobrado na URL
+    try {
+      if (isCatalogRoute()) window.history.replaceState({}, "", window.location.pathname);
+    } catch (e) {}
+  };
+  useEffect(() => {
+    const onPop = () => {
+      if (backHandlerRef.current) backHandlerRef.current();
+    };
+    window.addEventListener("popstate", onPop);
+    return () => window.removeEventListener("popstate", onPop);
+  }, []);
+  // Empurra uma entrada no histórico sempre que uma camada nova abre
+  // (tela ou modal), para o "voltar" do celular ter o que desfazer.
+  const navDepth = (view !== "dashboard" && view !== "catalogo" ? 1 : 0) + [showSuppliers, showPrestadores, showUsers, showChangePass, showRelatorio, showDespesas, showNotifs, showPesquisaPlaca, showLogistica, showPendencias, showPecasPendentes, showPrepCategorias].filter(Boolean).length;
+  const prevNavDepthRef = useRef(navDepth);
+  useEffect(() => {
+    if (navDepth > prevNavDepthRef.current) {
+      try {
+        window.history.pushState({ premierNav: navDepth }, "");
+      } catch (e) {}
+    }
+    prevNavDepthRef.current = navDepth;
+  }, [navDepth]);
   async function loadAll() {
     try {
       const [dbUsers, dbCars, dbSup, dbPrest, dbDark, dbDesp, dbLogs, dbPrepCats, dbMetaDiaria, dbPecasEstoque] = await Promise.all([sbGet("users"), sbLoadCars(), sbGet("suppliers"), sbGet("prestadores"), sbGet("dark_mode"), sbGet("despesas_fixas"), sbGet("activity_log"), sbGet("prep_categorias"), sbGet("meta_diaria"), sbGet("pecas_estoque")]);
@@ -12422,6 +12899,9 @@ function App() {
       setSelectedCar(updated);
       if (updated.status !== selectedCar.status) {
         pushLog(`Status alterado: ${selectedCar.name} → ${updated.status}`, user.name, "info");
+      }
+      if ((updated.loja || "") !== (selectedCar.loja || "")) {
+        pushLog(`Loja alterada: ${selectedCar.marca || ""} ${selectedCar.name} de ${selectedCar.loja || "sem loja"} para ${updated.loja || "sem loja"}`, user.name, "info");
       }
       if (updated.status === "Vendido" && selectedCar.status !== "Vendido") {
         pushLog(`Venda registrada: ${updated.marca || ""} ${updated.name} por ${updated.precoVenda ? fmt(updated.precoVenda) : "—"}`, user.name, "success");
