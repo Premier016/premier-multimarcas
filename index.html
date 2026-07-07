@@ -8943,51 +8943,6 @@ function CarCard({
   const prioAtiva = car.status !== "Vendido" ? car.prioridade : "";
   const prioCol = prioAtiva ? URG_COL[prioAtiva] : null;
   const emPrestador = car.prestadorAtual && car.prestadorAtual !== "Sem prestador";
-  const prestadorTexto = emPrestador ? car.prestadorAtual + (prestadorDias !== null ? prestadorDias < 0 ? ` · venceu +${Math.abs(prestadorDias)}d` : prestadorDias === 0 ? " · vence hoje" : ` · ${prestadorDias}d` : "") : "Na loja";
-  const reservaHoras = reservaHorasRestantes(reservaCard);
-  const reservaTexto = reservaCard ? `${reservaCard.cliente || "Cliente"}${reservaCard.por ? " · " + reservaCard.por : ""}${reservaHoras !== null ? " · " + reservaHoras + "h" : ""}` : "Livre";
-  const agendaRaw = car.agendamento || car.agenda || car.proximoAgendamento || car.testDrive || car.visitaAgendada || "";
-  const agendaTexto = (() => {
-    if (!agendaRaw) return "";
-    if (typeof agendaRaw === "string") return agendaRaw.trim();
-    if (typeof agendaRaw === "object") {
-      const data = agendaRaw.data || agendaRaw.dia || agendaRaw.quando || agendaRaw.em || "";
-      const hora = agendaRaw.hora || agendaRaw.horario || "";
-      const cliente = agendaRaw.cliente || agendaRaw.nome || agendaRaw.titulo || "";
-      return [data, hora, cliente].filter(Boolean).join(" · ");
-    }
-    return "";
-  })();
-  const InfoTile = (icon, label, value, col) => /*#__PURE__*/React.createElement("div", {
-    style: {
-      background: (col || C.textMuted) + "10",
-      border: `1px solid ${(col || C.border)}2f`,
-      borderRadius: 9,
-      padding: "6px 8px",
-      minWidth: 0
-    }
-  }, /*#__PURE__*/React.createElement("div", {
-    style: {
-      display: "flex",
-      alignItems: "center",
-      gap: 4,
-      color: col || C.textMuted,
-      fontSize: 9,
-      fontWeight: 900,
-      textTransform: "uppercase",
-      marginBottom: 2,
-      whiteSpace: "nowrap"
-    }
-  }, /*#__PURE__*/React.createElement("span", null, icon), /*#__PURE__*/React.createElement("span", null, label)), /*#__PURE__*/React.createElement("div", {
-    style: {
-      color: C.text,
-      fontSize: 10,
-      fontWeight: 800,
-      whiteSpace: "nowrap",
-      overflow: "hidden",
-      textOverflow: "ellipsis"
-    }
-  }, value || "—"));
   const temAlertas = prioAtiva || reservaCard || pecasPend > 0 || fipePct !== null || mostrarCustoParado || garantiaDias !== null || alerta;
   return /*#__PURE__*/React.createElement("div", {
     onClick: onClick,
@@ -9004,11 +8959,11 @@ function CarCard({
   }, /*#__PURE__*/React.createElement("div", {
     style: {
       display: "flex",
-      minHeight: 156
+      height: 120
     }
   }, /*#__PURE__*/React.createElement("div", {
     style: {
-      width: 136,
+      width: 130,
       flexShrink: 0,
       position: "relative",
       background: C.bg,
@@ -9063,10 +9018,10 @@ function CarCard({
   }, "\uD83D\uDCF8 ", car.fotos.length)), /*#__PURE__*/React.createElement("div", {
     style: {
       flex: 1,
-      padding: "10px 12px 9px",
+      padding: "10px 12px",
       display: "flex",
       flexDirection: "column",
-      gap: 8,
+      justifyContent: "space-between",
       minWidth: 0
     }
   }, /*#__PURE__*/React.createElement("div", null, /*#__PURE__*/React.createElement("div", {
@@ -9074,8 +9029,8 @@ function CarCard({
       display: "flex",
       justifyContent: "space-between",
       alignItems: "flex-start",
-      gap: 8,
-      marginBottom: 4
+      gap: 6,
+      marginBottom: 3
     }
   }, /*#__PURE__*/React.createElement("div", {
     style: {
@@ -9127,14 +9082,7 @@ function CarCard({
       color: C.textDim,
       marginTop: 2
     }
-  }, "Pre\xE7o n\xE3o definido")), /*#__PURE__*/React.createElement("div", {
-    style: {
-      display: "grid",
-      gridTemplateColumns: "repeat(auto-fit,minmax(104px,1fr))",
-      gap: 6,
-      marginTop: 7
-    }
-  }, InfoTile("📍", "Loja", car.loja || "Sem loja", C.info), InfoTile("🔧", "Prestador", prestadorTexto, emPrestador ? prestadorCol : C.textDim), InfoTile("🔒", "Reserva", reservaTexto, reservaCard ? C.warning : C.textDim), InfoTile("📅", "Agenda", agendaTexto || "Livre", agendaTexto ? C.info : C.textDim))), /*#__PURE__*/React.createElement("div", {
+  }, "Pre\xE7o n\xE3o definido"))), /*#__PURE__*/React.createElement("div", {
     style: {
       padding: "8px 12px 10px",
       borderTop: `1px solid ${C.border}`
@@ -9143,28 +9091,50 @@ function CarCard({
     style: {
       display: "flex",
       alignItems: "center",
-      justifyContent: "space-between",
-      gap: 8,
-      marginBottom: temAlertas ? 6 : 5
+      gap: 5,
+      marginBottom: 5
     }
   }, /*#__PURE__*/React.createElement("span", {
     style: {
+      background: C.info + "18",
+      color: C.info,
+      borderRadius: 7,
+      padding: "2px 7px",
+      fontSize: 9,
+      fontWeight: 700,
+      whiteSpace: "nowrap",
+      overflow: "hidden",
+      textOverflow: "ellipsis",
+      maxWidth: "40%",
+      flexShrink: 0
+    }
+  }, "📍 ", car.loja || "—"), /*#__PURE__*/React.createElement("span", {
+    style: {
+      background: (emPrestador ? prestadorCol : C.textDim) + "18",
+      color: emPrestador ? prestadorCol : C.textMuted,
+      borderRadius: 7,
+      padding: "2px 7px",
+      fontSize: 9,
+      fontWeight: 700,
+      flex: 1,
+      minWidth: 0,
+      whiteSpace: "nowrap",
+      overflow: "hidden",
+      textOverflow: "ellipsis",
+      textAlign: "center"
+    }
+  }, emPrestador ? "🔧 " + car.prestadorAtual + (prestadorDias !== null ? prestadorDias < 0 ? ` · venceu +${Math.abs(prestadorDias)}d` : prestadorDias === 0 ? " · vence hoje" : ` · ${prestadorDias}d` : "") : "🏠 Na loja"), /*#__PURE__*/React.createElement("span", {
+    style: {
       background: saude.col + "18",
       color: saude.col,
-      borderRadius: 8,
-      padding: "2px 8px",
-      fontSize: 9,
-      fontWeight: 900,
-      whiteSpace: "nowrap"
-    }
-  }, "Saúde ", saude.score), /*#__PURE__*/React.createElement("span", {
-    style: {
-      color: C.textMuted,
+      borderRadius: 7,
+      padding: "2px 7px",
       fontSize: 9,
       fontWeight: 800,
-      whiteSpace: "nowrap"
+      whiteSpace: "nowrap",
+      flexShrink: 0
     }
-  }, "Preparação ", pct, "%")), temAlertas && /*#__PURE__*/React.createElement("div", {
+  }, "Saúde ", saude.score)), temAlertas && /*#__PURE__*/React.createElement("div", {
     style: {
       display: "flex",
       gap: 4,
