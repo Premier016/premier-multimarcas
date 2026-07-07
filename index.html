@@ -23,6 +23,7 @@
     @keyframes catalogDoorRight{0%,58%{transform:rotateY(0)}84%,100%{transform:rotateY(62deg)}}
     @keyframes catalogWheelSpin{to{transform:rotate(360deg)}}
     @keyframes catalogCardsIn{from{opacity:0;transform:translateY(18px)}to{opacity:1;transform:translateY(0)}}
+    @keyframes cardPulseAlta{0%,100%{box-shadow:0 0 0 0 rgba(239,68,68,.55)}50%{box-shadow:0 0 0 7px rgba(239,68,68,0)}}
   </style>
 </head>
 <body>
@@ -197,6 +198,60 @@ const addMonths = (d, n) => {
 const nowStr = () => new Date().toLocaleString("pt-BR");
 const uid = () => Date.now().toString(36) + Math.random().toString(36).slice(2, 7);
 const safeBottom = extra => `calc(${extra}px + env(safe-area-inset-bottom, 0px))`;
+// Reserva de veículo: retorna a reserva se estiver válida (carro não vendido
+// e prazo não expirado), senão null. Regra única usada em card, ficha e venda.
+function reservaAtiva(car) {
+  const r = car && car.reserva;
+  if (!r || !r.cliente && !r.por) return null;
+  if (car.status === "Vendido") return null;
+  if (r.ate) {
+    const t = new Date(r.ate).getTime();
+    if (!isNaN(t) && t < Date.now()) return null;
+  }
+  return r;
+}
+function reservaHorasRestantes(r) {
+  if (!r || !r.ate) return null;
+  const t = new Date(r.ate).getTime();
+  if (isNaN(t)) return null;
+  return Math.max(0, Math.ceil((t - Date.now()) / 3600000));
+}
+// Ordem de prioridade manual do carro (Alta primeiro, sem prioridade por último)
+function prioridadeRank(car) {
+  const p = car && car.prioridade;
+  return p === "Alta" ? 0 : p === "Média" ? 1 : p === "Baixa" ? 2 : 3;
+}
+// Copia texto com fallback para navegadores/contextos sem navigator.clipboard
+// (ex.: file://, HTTP sem TLS, WebView antiga). Resolve sempre com true/false.
+function copyText(texto) {
+  function fallback() {
+    try {
+      const ta = document.createElement("textarea");
+      ta.value = texto;
+      ta.style.position = "fixed";
+      ta.style.opacity = "0";
+      document.body.appendChild(ta);
+      ta.focus();
+      ta.select();
+      const ok = document.execCommand("copy");
+      document.body.removeChild(ta);
+      return ok;
+    } catch (e) {
+      return false;
+    }
+  }
+  return new Promise(resolve => {
+    try {
+      if (navigator.clipboard && navigator.clipboard.writeText) {
+        navigator.clipboard.writeText(texto).then(() => resolve(true)).catch(() => resolve(fallback()));
+      } else {
+        resolve(fallback());
+      }
+    } catch (e) {
+      resolve(fallback());
+    }
+  });
+}
 const PREP_COLORS = ["#E85D04", "#2563EB", "#059669", "#DC2626", "#B45309", "#7C3AED", "#0891B2", "#F59E0B", "#3B82F6", "#10B981"];
 function prepCategoriasDefaultList() {
   return Object.entries(DEFAULT_CATS).map(([key, cat]) => ({
@@ -675,8 +730,11 @@ function catalogoTrackingPayload(car, colaborador) {
 }
 
 // ═══ SUPABASE ═══════════════════════════════════════════════════
+let _sbClient = null;
 function getSB() {
-  return window.supabase.createClient(SB_URL, SB_KEY);
+  // Reutiliza um único cliente em vez de criar um novo a cada chamada
+  if (!_sbClient) _sbClient = window.supabase.createClient(SB_URL, SB_KEY);
+  return _sbClient;
 }
 async function sbGet(key) {
   try {
@@ -691,6 +749,7 @@ async function sbGet(key) {
   return null;
 }
 async function sbSet(key, value) {
+  // Retorna true se gravou, false se falhou (para o app poder avisar o usuário)
   try {
     const {
       error
@@ -701,9 +760,14 @@ async function sbSet(key, value) {
     }, {
       onConflict: "key"
     });
-    if (error) console.error("sbSet error:", error.message);
+    if (error) {
+      console.error("sbSet error:", error.message);
+      return false;
+    }
+    return true;
   } catch (e) {
     console.error("sbSet exception", e);
+    return false;
   }
 }
 async function sbUpload(file, carId, type) {
@@ -733,16 +797,52 @@ async function sbUpload(file, carId, type) {
 // Cada carro vira 1 linha na tabela premier_cars -> saves simultâneos
 // não se sobrescrevem. Se a tabela faltar, cai no blob antigo ("cars").
 let _carsMode = "blob"; // "rows" = tabela premier_cars ok | "blob" = fallback
+// Proteção contra edição simultânea do MESMO carro:
+// guarda a versão (updated_at) e uma foto do carro na última leitura/gravação.
+// Ao salvar, se outro usuário gravou depois de nós, mescla campo a campo em
+// vez de sobrescrever tudo.
+let _carsMeta = {}; // id -> updated_at conhecido
+let _carsBaseline = {}; // id -> JSON do carro na última leitura/gravação
+function _snapshotCar(car, updatedAt) {
+  try {
+    _carsMeta[car.id] = updatedAt || null;
+    _carsBaseline[car.id] = JSON.stringify(car);
+  } catch (e) {}
+}
+function _mergeCarConflict(mine, base, server) {
+  // Começa da versão do servidor e aplica somente os campos que EU alterei
+  // em relação à minha versão de referência (base). Histórico é unido.
+  const merged = { ...server };
+  Object.keys(mine).forEach(k => {
+    if (k === "historico" || k === "_mergedAt") return;
+    const meu = JSON.stringify(mine[k]);
+    const ref = base ? JSON.stringify(base[k]) : undefined;
+    if (meu !== ref) merged[k] = mine[k];
+  });
+  const vistos = new Set();
+  merged.historico = [...(server.historico || []), ...(mine.historico || [])].filter(h => {
+    const key = h && h.id ? h.id : JSON.stringify(h);
+    if (vistos.has(key)) return false;
+    vistos.add(key);
+    return true;
+  });
+  merged.id = mine.id;
+  return merged;
+}
 async function sbLoadCars() {
   try {
-    const { data, error } = await getSB().from("premier_cars").select("id,data");
+    const { data, error } = await getSB().from("premier_cars").select("id,data,updated_at");
     if (error) {
       _carsMode = "blob";
       const blob = await sbGet("cars");
       return Array.isArray(blob) ? blob : [];
     }
     _carsMode = "rows";
-    if (data && data.length > 0) return data.map(r => ({ ...(r.data || {}), id: (r.data && r.data.id) || r.id }));
+    if (data && data.length > 0) {
+      const lista = data.map(r => ({ ...(r.data || {}), id: (r.data && r.data.id) || r.id }));
+      data.forEach((r, i) => _snapshotCar(lista[i], r.updated_at));
+      return lista;
+    }
     // Tabela vazia: migra do blob antigo (uma vez), se existir
     const blob = await sbGet("cars");
     if (Array.isArray(blob) && blob.length > 0) {
@@ -757,33 +857,63 @@ async function sbLoadCars() {
     return Array.isArray(blob) ? blob : [];
   }
 }
-async function sbSaveCar(car) {
-  if (_carsMode !== "rows") return;
+async function sbSaveCar(carInput) {
+  // Retorna { ok, car, merged } para o app confirmar/avisar o salvamento.
+  const { _mergedAt, ...car } = carInput || {};
+  if (_carsMode !== "rows") return { ok: true, car, merged: false };
   try {
+    let toSave = car;
+    let houveConflito = false;
+    try {
+      const { data: rows } = await getSB().from("premier_cars").select("data,updated_at").eq("id", car.id);
+      const server = rows && rows[0];
+      if (server && server.updated_at && _carsMeta[car.id] && server.updated_at !== _carsMeta[car.id]) {
+        const base = _carsBaseline[car.id] ? JSON.parse(_carsBaseline[car.id]) : null;
+        toSave = _mergeCarConflict(car, base, { ...(server.data || {}), id: car.id });
+        houveConflito = true;
+      }
+    } catch (e) {}
+    const now = new Date().toISOString();
     const { error } = await getSB().from("premier_cars").upsert({
       id: car.id,
-      data: car,
-      updated_at: new Date().toISOString()
+      data: toSave,
+      updated_at: now
     }, { onConflict: "id" });
-    if (error) console.error("sbSaveCar error:", error.message);
-  } catch (e) { console.error("sbSaveCar exception", e); }
+    if (error) {
+      console.error("sbSaveCar error:", error.message);
+      return { ok: false, car, merged: false };
+    }
+    _snapshotCar(toSave, now);
+    if (houveConflito) {
+      pushNotif("⚠️ Outro usuário editou este carro ao mesmo tempo. As alterações foram mescladas.", "warning");
+      return { ok: true, car: { ...toSave, _mergedAt: Date.now() }, merged: true };
+    }
+    return { ok: true, car: toSave, merged: false };
+  } catch (e) {
+    console.error("sbSaveCar exception", e);
+    return { ok: false, car, merged: false };
+  }
 }
 async function sbDeleteCar(id) {
-  if (_carsMode !== "rows") return;
+  if (_carsMode !== "rows") return true;
   try {
     const { error } = await getSB().from("premier_cars").delete().eq("id", id);
-    if (error) console.error("sbDeleteCar error:", error.message);
-  } catch (e) { console.error("sbDeleteCar exception", e); }
+    if (error) { console.error("sbDeleteCar error:", error.message); return false; }
+    return true;
+  } catch (e) { console.error("sbDeleteCar exception", e); return false; }
 }
 async function sbSaveAllCars(cars) {
   if (_carsMode === "rows") {
     try {
-      const rows = cars.map(c => ({ id: c.id, data: c, updated_at: new Date().toISOString() }));
+      const now = new Date().toISOString();
+      const rows = cars.map(c => ({ id: c.id, data: c, updated_at: now }));
       const { error } = await getSB().from("premier_cars").upsert(rows, { onConflict: "id" });
-      if (error) console.error("sbSaveAllCars error:", error.message);
-    } catch (e) { console.error("sbSaveAllCars exception", e); }
+      if (error) { console.error("sbSaveAllCars error:", error.message); return false; }
+      cars.forEach(c => _snapshotCar(c, now));
+      return true;
+    } catch (e) { console.error("sbSaveAllCars exception", e); return false; }
   } else {
-    await sbSet("cars", cars);
+    return await sbSet("cars", cars);
   }
 }
 
@@ -913,6 +1043,8 @@ function createCar(user) {
     leilaoData: "",
     leilaoTaxas: "",
     status: "Entrada",
+    prioridade: "",
+    reserva: "",
     createdAt: new Date().toISOString(),
     createdBy: user.name,
     aprovadoPor: "",
@@ -1015,6 +1147,79 @@ let _addLog = null;
 // vis: "todos" = proprietário/gerente only | "operacional" = all roles see
 function pushLog(acao, por, tipo = "info", vis = "todos") {
   if (_addLog) _addLog({ id: uid(), acao, por, em: nowStr(), tipo, vis });
+}
+// ── Auditoria: descreve, em texto, o que mudou entre duas versões do carro.
+// Função pura (fácil de testar). Só cobre campos relevantes p/ a gestão.
+const AUDIT_FIELDS = [
+  ["name", "Modelo", null], ["marca", "Marca", null], ["plate", "Placa", null],
+  ["year", "Ano", null], ["color", "Cor", null], ["km", "KM", null],
+  ["combustivel", "Combustível", null], ["status", "Status", null],
+  ["loja", "Loja", null], ["origem", "Origem", null], ["prioridade", "Prioridade", null],
+  ["precoVenda", "Preço de venda", "money"], ["valorPago", "Valor de compra", "money"],
+  ["tabelaFipe", "FIPE", "money"], ["consignadoValor", "Valor consignado", "money"],
+  ["comissaoValor", "Comissão", "money"], ["formaPagamento", "Forma de pagamento", null],
+  ["comprador", "Comprador", null], ["vendedor", "Vendedor", null],
+  ["dataVenda", "Data da venda", null], ["garantiaAte", "Garantia até", null],
+  ["prestadorAtual", "Prestador", null], ["prestadorPrazo", "Prazo do prestador", null],
+  ["prestadorKmEntrada", "KM entrada prestador", null], ["prestadorKmSaida", "KM saída prestador", null]
+];
+const AUDIT_TEXT_FIELDS = [
+  ["mediaObs", "Observações de mídia"], ["fichaTecnica", "Ficha técnica"],
+  ["descricaoAnuncio", "Descrição do anuncio"], ["perguntasFrequentes", "Perguntas frequentes"],
+  ["perfilCliente", "Perfil do cliente"], ["opcionais", "Opcionais"]
+];
+function diffCarForAudit(before, after, catKeys) {
+  if (!before || !after) return [];
+  const out = [];
+  const money = v => !v && v !== 0 ? "—" : "R$ " + Number(v).toLocaleString("pt-BR", { minimumFractionDigits: 2 });
+  AUDIT_FIELDS.forEach(([k, label, fmtType]) => {
+    const a = before[k] == null ? "" : before[k];
+    const b = after[k] == null ? "" : after[k];
+    if (String(a) !== String(b)) {
+      const fa = fmtType === "money" ? money(a) : (a === "" ? "—" : a);
+      const fb = fmtType === "money" ? money(b) : (b === "" ? "—" : b);
+      out.push(`${label}: ${fa} → ${fb}`);
+    }
+  });
+  AUDIT_TEXT_FIELDS.forEach(([k, label]) => {
+    if (JSON.stringify(before[k] || "") !== JSON.stringify(after[k] || "")) out.push(`${label}: alterado`);
+  });
+  // Categorias de preparação: conta itens concluídos antes/depois
+  (catKeys || []).forEach(k => {
+    const ba = before[k] && Array.isArray(before[k].items) ? before[k].items : null;
+    const bb = after[k] && Array.isArray(after[k].items) ? after[k].items : null;
+    if (!ba && !bb) return;
+    const doneA = ba ? ba.filter(i => i.status === "concluído").length : 0;
+    const doneB = bb ? bb.filter(i => i.status === "concluído").length : 0;
+    const totB = bb ? bb.length : (ba ? ba.length : 0);
+    const info = prepCatInfo(k);
+    if (doneA !== doneB) out.push(`${info.label}: ${doneA}/${totB} → ${doneB}/${totB} concluídos`);
+    else if (JSON.stringify(ba) !== JSON.stringify(bb)) out.push(`${info.label}: itens atualizados`);
+  });
+  // Peças: total e instaladas
+  const pa = Array.isArray(before.pecas) ? before.pecas : [];
+  const pb = Array.isArray(after.pecas) ? after.pecas : [];
+  const instA = pa.filter(p => p.status === "Instalada").length;
+  const instB = pb.filter(p => p.status === "Instalada").length;
+  if (pa.length !== pb.length) out.push(`Peças: ${pa.length} → ${pb.length} (instaladas ${instA}→${instB})`);
+  else if (instA !== instB) out.push(`Peças instaladas: ${instA} → ${instB}`);
+  else if (JSON.stringify(pa) !== JSON.stringify(pb)) out.push("Peças: dados atualizados");
+  // Reserva do veículo
+  const ra = before.reserva && before.reserva.cliente ? before.reserva : null;
+  const rb = after.reserva && after.reserva.cliente ? after.reserva : null;
+  if (JSON.stringify(ra) !== JSON.stringify(rb)) {
+    if (rb) out.push(`Reserva: para ${rb.cliente} (por ${rb.por || "—"})`);
+    else if (ra) out.push(`Reserva de ${ra.cliente}: removida`);
+  }
+  // Documentos OK
+  const da = Array.isArray(before.documentos) ? before.documentos.filter(d => d.ok).length : 0;
+  const db = Array.isArray(after.documentos) ? after.documentos.filter(d => d.ok).length : 0;
+  if (da !== db) out.push(`Documentos OK: ${da} → ${db}`);
+  // Fotos / vídeos
+  const fa = Array.isArray(before.fotos) ? before.fotos.length : 0;
+  const fb = Array.isArray(after.fotos) ? after.fotos.length : 0;
+  if (fa !== fb) out.push(`Fotos: ${fa} → ${fb}`);
+  return out;
 }
 
 // ═══ PULL TO REFRESH ════════════════════════════════════════════
@@ -1160,7 +1365,16 @@ function NotificacoesModal({
   onClose
 }) {
   const isAdmin = user && ["proprietario", "gerente"].includes(user.role);
-  const filtered = isAdmin ? logs : logs.filter(l => l.vis === "operacional" || !l.vis);
+  const [fTipo, setFTipo] = useState("todas");
+  const [busca, setBusca] = useState("");
+  const base = isAdmin ? logs : logs.filter(l => l.vis === "operacional" || !l.vis);
+  const q = busca.trim().toLowerCase();
+  const filtered = base.filter(l => {
+    if (fTipo === "edicoes" && l.vis !== "gestao") return false;
+    if (fTipo === "operacional" && !(l.vis === "operacional" || !l.vis)) return false;
+    if (q && !((l.acao || "").toLowerCase().includes(q) || (l.por || "").toLowerCase().includes(q))) return false;
+    return true;
+  });
   const TIPO_COL = {
     info: C.info,
     success: C.success,
@@ -1198,14 +1412,56 @@ function NotificacoesModal({
     onClick: onClear,
     variant: "ghost",
     small: true
-  }, "Limpar tudo")), logs.length === 0 ? /*#__PURE__*/React.createElement("div", {
+  }, "Limpar tudo")), /*#__PURE__*/React.createElement("div", {
+    style: {
+      display: "flex",
+      flexDirection: "column",
+      gap: 7
+    }
+  }, isAdmin && /*#__PURE__*/React.createElement("div", {
+    style: {
+      display: "flex",
+      gap: 6
+    }
+  }, [["todas", "Tudo"], ["edicoes", "✏️ Edições"], ["operacional", "Operacional"]].map(([k, lbl]) => /*#__PURE__*/React.createElement("button", {
+    key: k,
+    onClick: () => setFTipo(k),
+    style: {
+      flex: 1,
+      padding: "6px 0",
+      borderRadius: 8,
+      border: `1px solid ${fTipo === k ? C.red : C.border}`,
+      background: fTipo === k ? C.red + "20" : "transparent",
+      color: fTipo === k ? C.red : C.textMuted,
+      cursor: "pointer",
+      fontSize: 11,
+      fontFamily: "inherit",
+      fontWeight: fTipo === k ? 700 : 500
+    }
+  }, lbl))), /*#__PURE__*/React.createElement("input", {
+    placeholder: "🔍 Buscar por carro, campo ou usuário...",
+    value: busca,
+    onChange: e => setBusca(e.target.value),
+    style: {
+      width: "100%",
+      background: C.bg,
+      border: `1px solid ${C.border}`,
+      borderRadius: 8,
+      padding: "8px 11px",
+      color: C.text,
+      fontSize: 12,
+      fontFamily: "inherit",
+      outline: "none",
+      boxSizing: "border-box"
+    }
+  })), filtered.length === 0 ? /*#__PURE__*/React.createElement("div", {
     style: {
       textAlign: "center",
       padding: "30px 0",
       color: C.textDim,
       fontSize: 13
     }
-  }, "Nenhuma atividade registrada") : /*#__PURE__*/React.createElement("div", {
+  }, logs.length === 0 ? "Nenhuma atividade registrada" : "Nenhum registro para este filtro") : /*#__PURE__*/React.createElement("div", {
     style: {
       display: "flex",
       flexDirection: "column",
@@ -2002,7 +2258,6 @@ function LoginScreen({
     }
     onLogin(user);
   }
-  const preview = (users || DEFAULT_USERS).slice(0, 5);
   return /*#__PURE__*/React.createElement("div", {
     style: {
       minHeight: "100vh",
@@ -2089,34 +2344,7 @@ function LoginScreen({
       cursor: "pointer",
       width: "100%"
     }
-  }, "Entrar")), /*#__PURE__*/React.createElement("div", {
-    style: {
-      marginTop: 12,
-      background: C.card,
-      border: `1px solid ${C.border}`,
-      borderRadius: 10,
-      padding: 12,
-      fontSize: 11,
-      color: C.textMuted
-    }
-  }, /*#__PURE__*/React.createElement("div", {
-    style: {
-      color: C.textDim,
-      fontWeight: 700,
-      fontSize: 9,
-      letterSpacing: 1,
-      marginBottom: 5
-    }
-  }, "LOGINS PADR\xC3O \xB7 SENHA: premier123"), preview.map(u2 => /*#__PURE__*/React.createElement("div", {
-    key: u2.id,
-    style: {
-      lineHeight: 1.9
-    }
-  }, ROLE_LABEL[u2.role] || u2.role, ": ", /*#__PURE__*/React.createElement("b", {
-    style: {
-      color: C.text
-    }
-  }, u2.username))))));
+  }, "Entrar"))));
 }
 
 // ═══ USER MANAGEMENT MODAL ══════════════════════════════════════
@@ -2187,7 +2415,7 @@ function UserManagementModal({
   }
   function copyCatalogLink(u) {
     const link = catalogoPublicoUrl(u);
-    navigator.clipboard.writeText(link).then(() => pushNotif("Link do catálogo copiado", "success")).catch(() => pushNotif("Não foi possível copiar o link", "error"));
+    copyText(link).then(ok => pushNotif(ok ? "Link do catálogo copiado" : "Não foi possível copiar o link", ok ? "success" : "error"));
   }
   return /*#__PURE__*/React.createElement(Modal, {
     title: "\uD83D\uDC64 Gerenciar Usu\xE1rios",
@@ -4897,7 +5125,7 @@ function TagModal({
     }
   }
   function copiar() {
-    navigator.clipboard.writeText(url).then(() => pushNotif("📋 Link copiado!", "success")).catch(() => {});
+    copyText(url).then(ok => pushNotif(ok ? "📋 Link copiado!" : "Não foi possível copiar o link", ok ? "success" : "error"));
   }
   return /*#__PURE__*/React.createElement(Modal, {
     title: "\uD83C\uDFF7\uFE0F Etiqueta NFC / QR do Ve\xEDculo",
@@ -5332,14 +5560,14 @@ function OverviewTab({
   }, /*#__PURE__*/React.createElement(Btn, {
     onClick: () => {
       const txt = carShareText(car);
-      navigator.clipboard.writeText(txt).then(() => pushNotif("📋 Ficha copiada!", "success")).catch(() => pushNotif("Não foi possível copiar", "error"));
+      copyText(txt).then(ok => pushNotif(ok ? "📋 Ficha copiada!" : "Não foi possível copiar", ok ? "success" : "error"));
     },
     variant: "ghost",
     small: true
   }, "\uD83D\uDCE4 Compartilhar Ficha"), /*#__PURE__*/React.createElement(Btn, {
     onClick: () => {
       const txt = carShareText(car);
-      window.open("https://wa.me/?text=" + encodeURIComponent(txt), "_blank");
+      window.open("https://wa.me/?text=" + encodeURIComponent(txt), "_blank", "noopener,noreferrer");
     },
     variant: "success",
     small: true
@@ -6463,7 +6691,7 @@ function DocumentosTab({
     small: true,
     variant: "ghost",
     style: { flex: 1, justifyContent: "center" },
-    onClick: () => window.open(slot.file.url, "_blank")
+    onClick: () => window.open(slot.file.url, "_blank", "noopener,noreferrer")
   }, "Abrir"), /*#__PURE__*/React.createElement(Btn, {
     small: true,
     variant: "danger",
@@ -7697,6 +7925,140 @@ function ApprovalTab({
 }
 
 // ═══ CAR DETAIL ══════════════════════════════════════════════════
+// ═══ RESERVA DE VEÍCULO MODAL ═══════════════════════════════════
+const RESERVA_VALIDADES = [["24 horas", 24], ["48 horas", 48], ["72 horas", 72], ["Sem prazo", 0]];
+function ReservaModal({
+  car,
+  user,
+  onConfirm,
+  onClose
+}) {
+  const [cliente, setCliente] = useState("");
+  const [tel, setTel] = useState("");
+  const [validade, setValidade] = useState("48 horas");
+  const [obs, setObs] = useState("");
+  return /*#__PURE__*/React.createElement(Modal, {
+    title: "🔒 Reservar veículo",
+    onClose: onClose,
+    width: 440
+  }, /*#__PURE__*/React.createElement("div", {
+    style: {
+      display: "flex",
+      flexDirection: "column",
+      gap: 13
+    }
+  }, /*#__PURE__*/React.createElement("div", {
+    style: {
+      fontSize: 12,
+      color: C.textMuted
+    }
+  }, "Enquanto reservado, outros vendedores serão avisados antes de registrar venda deste carro."), /*#__PURE__*/React.createElement(Inp, {
+    label: "Cliente interessado *",
+    value: cliente,
+    onChange: setCliente,
+    placeholder: "Nome do cliente"
+  }), /*#__PURE__*/React.createElement(Inp, {
+    label: "Telefone do cliente",
+    value: tel,
+    onChange: setTel,
+    placeholder: "(00) 00000-0000"
+  }), /*#__PURE__*/React.createElement(Sel, {
+    label: "Validade da reserva",
+    value: validade,
+    onChange: setValidade,
+    options: RESERVA_VALIDADES.map(v => v[0])
+  }), /*#__PURE__*/React.createElement(Txta, {
+    label: "Observações",
+    value: obs,
+    onChange: setObs,
+    rows: 2,
+    placeholder: "Ex: aguardando aprovação do financiamento..."
+  }), /*#__PURE__*/React.createElement("div", {
+    style: {
+      display: "flex",
+      gap: 8
+    }
+  }, /*#__PURE__*/React.createElement(Btn, {
+    variant: "ghost",
+    onClick: onClose,
+    style: {
+      flex: 1,
+      justifyContent: "center"
+    }
+  }, "Cancelar"), /*#__PURE__*/React.createElement(Btn, {
+    onClick: () => {
+      if (!cliente.trim()) {
+        pushNotif("Informe o nome do cliente.", "warning");
+        return;
+      }
+      const horas = (RESERVA_VALIDADES.find(v => v[0] === validade) || [null, 0])[1];
+      onConfirm({
+        cliente: cliente.trim(),
+        tel: tel.trim(),
+        horas,
+        obs: obs.trim()
+      });
+    },
+    style: {
+      flex: 2,
+      justifyContent: "center"
+    }
+  }, "🔒 Reservar"))));
+}
+
+// ═══ TROCA DE LOJA MODAL ════════════════════════════════════════
+function TrocaLojaModal({
+  deLoja,
+  paraLoja,
+  defaultResp,
+  onConfirm,
+  onClose
+}) {
+  const [resp, setResp] = useState(defaultResp || "");
+  return /*#__PURE__*/React.createElement(Modal, {
+    title: "📍 Transferência de loja",
+    onClose: onClose,
+    width: 420
+  }, /*#__PURE__*/React.createElement("div", {
+    style: {
+      display: "flex",
+      flexDirection: "column",
+      gap: 13
+    }
+  }, /*#__PURE__*/React.createElement("div", {
+    style: {
+      fontSize: 13,
+      color: C.text
+    }
+  }, deLoja, " → ", /*#__PURE__*/React.createElement("b", {
+    style: {
+      color: C.red
+    }
+  }, paraLoja)), /*#__PURE__*/React.createElement(Inp, {
+    label: "Quem levou/trouxe o carro?",
+    value: resp,
+    onChange: setResp,
+    placeholder: "Nome do responsável"
+  }), /*#__PURE__*/React.createElement("div", {
+    style: {
+      display: "flex",
+      gap: 8
+    }
+  }, /*#__PURE__*/React.createElement(Btn, {
+    variant: "ghost",
+    onClick: onClose,
+    style: {
+      flex: 1,
+      justifyContent: "center"
+    }
+  }, "Cancelar"), /*#__PURE__*/React.createElement(Btn, {
+    onClick: () => onConfirm((resp || "").trim() || defaultResp || ""),
+    style: {
+      flex: 1,
+      justifyContent: "center"
+    }
+  }, "✓ Confirmar"))));
+}
 function CarDetail({
   car: init,
   user,
@@ -7715,12 +8077,27 @@ function CarDetail({
   const [showFipe, setShowFipe] = useState(false);
   const [showPlacaFipe, setShowPlacaFipe] = useState(false);
   const [showTag, setShowTag] = useState(false);
-  const [saved, setSaved] = useState(false);
+  // Estado real do salvamento: "idle" | "saving" | "ok" | "error"
+  const [saveState, setSaveState] = useState("idle");
+  const [lojaPendente, setLojaPendente] = useState(null);
+  const [showReserva, setShowReserva] = useState(false);
   const saveTimer = useRef(null);
+  const carRef = useRef(car);
+  carRef.current = car;
+  const pendingSaveRef = useRef(false);
+  const mountedRef = useRef(true);
+  useEffect(() => () => { mountedRef.current = false; }, []);
+  // Versão de referência para auditoria (o que já foi registrado)
+  const auditBaseRef = useRef(JSON.parse(JSON.stringify(init)));
   useEffect(() => {
     setCar(ensureCarPreparationCategories(init));
     setTab(initialTab || "overview");
+    auditBaseRef.current = JSON.parse(JSON.stringify(init));
   }, [init.id, initialTab]);
+  useEffect(() => {
+    // Conflito de edição simultânea: adota a versão mesclada vinda do servidor
+    if (init && init._mergedAt) setCar(ensureCarPreparationCategories(init));
+  }, [init && init._mergedAt]);
   function addHist(updated, acao) {
     return {
       ...updated,
@@ -7732,14 +8109,57 @@ function CarDetail({
       }]
     };
   }
+  async function flushSave(updated) {
+    // Grava e reflete o resultado REAL no indicador (salvando → salvo/erro)
+    pendingSaveRef.current = false;
+    setSaveState("saving");
+    let ok = true;
+    try {
+      ok = await Promise.resolve(onSave(updated));
+    } catch (e) {
+      ok = false;
+    }
+    // Auditoria (só se gravou): registra cada mudança para a gestão
+    if (ok !== false) {
+      try {
+        const catKeys = Object.keys(getPreparationCats(updated));
+        const mudancas = diffCarForAudit(auditBaseRef.current, updated, catKeys);
+        if (mudancas.length > 0) {
+          const label = `${updated.marca ? updated.marca + " " : ""}${updated.name || "veículo"}${updated.plate ? " (" + updated.plate + ")" : ""}`;
+          mudancas.forEach(m => pushLog(`✏️ ${label} — ${m}`, user.name, "info", "gestao"));
+        }
+        auditBaseRef.current = JSON.parse(JSON.stringify(updated));
+      } catch (e) {}
+    }
+    if (!mountedRef.current) return ok;
+    setSaveState(ok === false ? "error" : "ok");
+    if (ok !== false) setTimeout(() => { if (mountedRef.current) setSaveState(s => s === "ok" ? "idle" : s); }, 1800);
+    return ok;
+  }
   function autoSave(updated) {
     clearTimeout(saveTimer.current);
+    pendingSaveRef.current = true;
     saveTimer.current = setTimeout(() => {
-      onSave(updated);
-      setSaved(true);
-      setTimeout(() => setSaved(false), 1600);
+      flushSave(updated);
     }, 900);
   }
+  // Garante que um salvamento pendente não se perca ao fechar/sair da ficha
+  useEffect(() => {
+    function flushNow() {
+      if (pendingSaveRef.current) {
+        clearTimeout(saveTimer.current);
+        pendingSaveRef.current = false;
+        onSave(carRef.current);
+      }
+    }
+    window.addEventListener("beforeunload", flushNow);
+    window.addEventListener("pagehide", flushNow);
+    return () => {
+      window.removeEventListener("beforeunload", flushNow);
+      window.removeEventListener("pagehide", flushNow);
+      flushNow();
+    };
+  }, []);
   function up(k, v) {
     setCar(p => {
       let n = {
@@ -7747,6 +8167,10 @@ function CarDetail({
         [k]: v
       };
       if (k === "status" && v === "Vendido" && p.status !== "Vendido") {
+        const rv = reservaAtiva(p);
+        if (rv && rv.por && rv.por !== user.name) {
+          if (!window.confirm(`⚠️ Este carro está RESERVADO por ${rv.por} para o cliente ${rv.cliente || "—"}. Registrar venda mesmo assim?`)) return p;
+        }
         if (!window.confirm("Registrar venda deste veículo? Data de venda e garantia de 3 meses serão preenchidas automaticamente.")) return p;
         const dv = p.dataVenda || todayISO();
         n = {
@@ -7760,21 +8184,10 @@ function CarDetail({
         pushNotif(`📋 ${v}`);
       }
       if (k === "loja" && v && v !== (p.loja || "Premier Multimarcas")) {
-        const lojaAnterior = p.loja || "Premier Multimarcas";
-        const responsavelMovimento = (window.prompt && window.prompt(`Quem levou/trouxe o carro de ${lojaAnterior} para ${v}?`, user.name)) || user.name;
-        const movimentoLoja = {
-          id: uid(),
-          de: lojaAnterior,
-          para: v,
-          responsavel: responsavelMovimento,
-          registradoPor: user.name,
-          em: nowStr()
-        };
-        n = addHist({
-          ...n,
-          movimentacoesLoja: [...(p.movimentacoesLoja || []), movimentoLoja]
-        }, `Transferência de loja: ${lojaAnterior} → ${v}. Responsável: ${responsavelMovimento}. Registrado por ${user.name}`);
-        pushNotif(`📍 Loja alterada: ${lojaAnterior} → ${v}`, "info");
+        // Abre modal próprio para registrar o responsável (sem window.prompt
+        // dentro do updater). A troca só é aplicada ao confirmar no modal.
+        setLojaPendente(v);
+        return p;
       }
       if (k === "prestadorAtual" && p.prestadorAtual && p.prestadorAtual !== "Sem prestador" && v && v !== "Sem prestador" && v !== p.prestadorAtual) {
         pushNotif("Faça o checklist de saída antes de trocar de prestador.", "warning");
@@ -7837,10 +8250,34 @@ function CarDetail({
       return n;
     });
   }
+  function confirmarTrocaLoja(responsavel) {
+    const destino = lojaPendente;
+    setLojaPendente(null);
+    if (!destino) return;
+    setCar(p => {
+      const lojaAnterior = p.loja || "Premier Multimarcas";
+      if (destino === lojaAnterior) return p;
+      const movimentoLoja = {
+        id: uid(),
+        de: lojaAnterior,
+        para: destino,
+        responsavel: responsavel || user.name,
+        registradoPor: user.name,
+        em: nowStr()
+      };
+      const n = addHist({
+        ...p,
+        loja: destino,
+        movimentacoesLoja: [...(p.movimentacoesLoja || []), movimentoLoja]
+      }, `Transferência de loja: ${lojaAnterior} → ${destino}. Responsável: ${movimentoLoja.responsavel}. Registrado por ${user.name}`);
+      autoSave(n);
+      return n;
+    });
+    pushNotif(`📍 Loja alterada para ${destino}`, "info");
+  }
   function save() {
-    onSave(car);
-    setSaved(true);
-    setTimeout(() => setSaved(false), 1600);
+    clearTimeout(saveTimer.current);
+    flushSave(carRef.current);
   }
   function changeTab(t) {
     setTab(t);
@@ -7863,7 +8300,45 @@ function CarDetail({
       return n;
     });
   }
+  function reservar(dados) {
+    setShowReserva(false);
+    setCar(p => {
+      const ate = dados.horas ? new Date(Date.now() + dados.horas * 3600000).toISOString() : "";
+      const reserva = {
+        por: user.name,
+        cliente: dados.cliente,
+        tel: dados.tel || "",
+        obs: dados.obs || "",
+        em: nowStr(),
+        ate
+      };
+      const n = addHist({
+        ...p,
+        reserva
+      }, `🔒 Reservado para ${dados.cliente} por ${user.name}${dados.horas ? ` (validade ${dados.horas}h)` : " (sem prazo)"}`);
+      autoSave(n);
+      return n;
+    });
+    pushNotif("🔒 Veículo reservado", "success");
+  }
+  function liberarReserva() {
+    if (!window.confirm("Liberar a reserva deste veículo?")) return;
+    setCar(p => {
+      const cli = p.reserva && p.reserva.cliente;
+      const n = addHist({
+        ...p,
+        reserva: ""
+      }, `🔓 Reserva${cli ? ` de ${cli}` : ""} liberada por ${user.name}`);
+      autoSave(n);
+      return n;
+    });
+    pushNotif("🔓 Reserva liberada", "info");
+  }
   function markSold() {
+    const rv = reservaAtiva(carRef.current);
+    if (rv && rv.por && rv.por !== user.name) {
+      if (!window.confirm(`⚠️ Este carro está RESERVADO por ${rv.por} para o cliente ${rv.cliente || "—"}. Registrar venda mesmo assim?`)) return;
+    }
     setCar(p => {
       const dv = new Date().toISOString().split("T")[0];
       const n = addHist({
@@ -7913,6 +8388,8 @@ function CarDetail({
   const isCatTab = Object.keys(catMap).includes(tab);
   const activeNav = isCatTab ? "prep" : tab;
   const prestadorDias = car.prestadorAtual && car.prestadorAtual !== "Sem prestador" && car.prestadorPrazo ? daysUntil(car.prestadorPrazo) : null;
+  const reservaCar = reservaAtiva(car);
+  const reservaHoras = reservaHorasRestantes(reservaCar);
   const fornecedoresPecas = fornecedoresDePecas(suppliers || []);
   const navItems = [{
     k: "overview",
@@ -8037,9 +8514,10 @@ function CarDetail({
     }
   }, s))), /*#__PURE__*/React.createElement(Btn, {
     onClick: save,
-    variant: saved ? "success" : "primary",
-    small: true
-  }, saved ? "✓ Salvo" : "💾"), CAN.delete(user.role) && /*#__PURE__*/React.createElement("button", {
+    variant: saveState === "ok" ? "success" : saveState === "error" ? "danger" : saveState === "saving" ? "ghost" : "primary",
+    small: true,
+    title: saveState === "error" ? "Falha ao salvar — toque para tentar de novo" : "Salvar"
+  }, saveState === "ok" ? "✓ Salvo" : saveState === "error" ? "⚠️ Erro — repetir" : saveState === "saving" ? "⏳" : "💾"), CAN.delete(user.role) && /*#__PURE__*/React.createElement("button", {
     onClick: () => {
       if (window.confirm(`Excluir "${car.name}"?`)) onDelete(car.id);
     },
@@ -8116,7 +8594,72 @@ function CarDetail({
       flex: 1,
       justifyContent: "center"
     }
-  }, "\uD83E\uDD1D Registrar Venda")), isCatTab && catMap[tab] && /*#__PURE__*/React.createElement("div", {
+  }, "\uD83E\uDD1D Registrar Venda"), car.status !== "Vendido" && (reservaCar ? /*#__PURE__*/React.createElement("div", {
+    style: {
+      flexBasis: "100%",
+      padding: "8px 10px",
+      borderRadius: 8,
+      border: `1px solid ${C.warning}55`,
+      background: C.warning + "16",
+      display: "flex",
+      alignItems: "center",
+      gap: 8,
+      flexWrap: "wrap"
+    }
+  }, /*#__PURE__*/React.createElement("div", {
+    style: {
+      flex: 1,
+      minWidth: 160,
+      fontSize: 11,
+      color: C.warning,
+      fontWeight: 700
+    }
+  }, "\uD83D\uDD12 Reservado para ", reservaCar.cliente || "\u2014", " \u00B7 por ", reservaCar.por || "\u2014", reservaHoras !== null ? ` \u00B7 expira em ${reservaHoras}h` : "", reservaCar.tel ? ` \u00B7 \uD83D\uDCDE ${reservaCar.tel}` : ""), /*#__PURE__*/React.createElement(Btn, {
+    onClick: liberarReserva,
+    variant: "ghost",
+    small: true
+  }, "\uD83D\uDD13 Liberar")) : /*#__PURE__*/React.createElement(Btn, {
+    onClick: () => setShowReserva(true),
+    variant: "ghost",
+    small: true,
+    style: {
+      flex: 1,
+      justifyContent: "center"
+    }
+  }, "\uD83D\uDD12 Reservar para cliente")), car.status !== "Vendido" && /*#__PURE__*/React.createElement("div", {
+    style: {
+      flexBasis: "100%",
+      display: "flex",
+      alignItems: "center",
+      gap: 6
+    }
+  }, /*#__PURE__*/React.createElement("span", {
+    style: {
+      fontSize: 9,
+      color: C.textMuted,
+      fontWeight: 800,
+      letterSpacing: .5
+    }
+  }, "PRIORIDADE:"), URGENCIA.map(u => {
+    const ativo = car.prioridade === u;
+    return /*#__PURE__*/React.createElement("button", {
+      key: u,
+      onClick: () => up("prioridade", ativo ? "" : u),
+      title: ativo ? "Tocar de novo remove a prioridade" : `Marcar prioridade ${u}`,
+      style: {
+        flex: 1,
+        padding: "5px 0",
+        borderRadius: 8,
+        border: `1px solid ${ativo ? URG_COL[u] : C.border}`,
+        background: ativo ? URG_COL[u] + "22" : "transparent",
+        color: ativo ? URG_COL[u] : C.textMuted,
+        cursor: "pointer",
+        fontSize: 10,
+        fontWeight: ativo ? 800 : 500,
+        fontFamily: "inherit"
+      }
+    }, u === "Alta" ? "\uD83D\uDD25 Alta" : u);
+  }))), isCatTab && catMap[tab] && /*#__PURE__*/React.createElement("div", {
     onClick: () => setShowCats(true),
     style: {
       marginTop: 8,
@@ -8336,6 +8879,17 @@ function CarDetail({
   }), showTag && /*#__PURE__*/React.createElement(TagModal, {
     car: car,
     onClose: () => setShowTag(false)
+  }), lojaPendente && /*#__PURE__*/React.createElement(TrocaLojaModal, {
+    deLoja: car.loja || "Premier Multimarcas",
+    paraLoja: lojaPendente,
+    defaultResp: user.name,
+    onConfirm: confirmarTrocaLoja,
+    onClose: () => setLojaPendente(null)
+  }), showReserva && /*#__PURE__*/React.createElement(ReservaModal, {
+    car: car,
+    user: user,
+    onConfirm: reservar,
+    onClose: () => setShowReserva(false)
   }), /*#__PURE__*/React.createElement(BottomNav, {
     items: navItems.map(it => ({
       ...it,
@@ -8385,25 +8939,76 @@ function CarCard({
   const stCol = ST_COL[car.status] || C.border;
   const foto = car.fotos && car.fotos.length > 0 ? car.fotos[0].url : null;
   const temFoto = !!foto;
-  return /*#__PURE__*/React.createElement("div", {
-    onClick: onClick,
+  const reservaCard = reservaAtiva(car);
+  const prioAtiva = car.status !== "Vendido" ? car.prioridade : "";
+  const prioCol = prioAtiva ? URG_COL[prioAtiva] : null;
+  const emPrestador = car.prestadorAtual && car.prestadorAtual !== "Sem prestador";
+  const prestadorTexto = emPrestador ? car.prestadorAtual + (prestadorDias !== null ? prestadorDias < 0 ? ` · venceu +${Math.abs(prestadorDias)}d` : prestadorDias === 0 ? " · vence hoje" : ` · ${prestadorDias}d` : "") : "Na loja";
+  const reservaHoras = reservaHorasRestantes(reservaCard);
+  const reservaTexto = reservaCard ? `${reservaCard.cliente || "Cliente"}${reservaCard.por ? " · " + reservaCard.por : ""}${reservaHoras !== null ? " · " + reservaHoras + "h" : ""}` : "Livre";
+  const agendaRaw = car.agendamento || car.agenda || car.proximoAgendamento || car.testDrive || car.visitaAgendada || "";
+  const agendaTexto = (() => {
+    if (!agendaRaw) return "";
+    if (typeof agendaRaw === "string") return agendaRaw.trim();
+    if (typeof agendaRaw === "object") {
+      const data = agendaRaw.data || agendaRaw.dia || agendaRaw.quando || agendaRaw.em || "";
+      const hora = agendaRaw.hora || agendaRaw.horario || "";
+      const cliente = agendaRaw.cliente || agendaRaw.nome || agendaRaw.titulo || "";
+      return [data, hora, cliente].filter(Boolean).join(" · ");
+    }
+    return "";
+  })();
+  const InfoTile = (icon, label, value, col) => /*#__PURE__*/React.createElement("div", {
     style: {
-      background: C.card,
-      border: `1px solid ${prestadorAtrasado ? C.error : alerta ? C.warning : C.border}`,
-      borderRadius: 14,
-      overflow: "hidden",
-      cursor: "pointer",
-      transition: "border-color .2s",
-      boxShadow: "0 2px 8px #0003"
+      background: (col || C.textMuted) + "10",
+      border: `1px solid ${(col || C.border)}2f`,
+      borderRadius: 9,
+      padding: "6px 8px",
+      minWidth: 0
     }
   }, /*#__PURE__*/React.createElement("div", {
     style: {
       display: "flex",
-      height: 120
+      alignItems: "center",
+      gap: 4,
+      color: col || C.textMuted,
+      fontSize: 9,
+      fontWeight: 900,
+      textTransform: "uppercase",
+      marginBottom: 2,
+      whiteSpace: "nowrap"
+    }
+  }, /*#__PURE__*/React.createElement("span", null, icon), /*#__PURE__*/React.createElement("span", null, label)), /*#__PURE__*/React.createElement("div", {
+    style: {
+      color: C.text,
+      fontSize: 10,
+      fontWeight: 800,
+      whiteSpace: "nowrap",
+      overflow: "hidden",
+      textOverflow: "ellipsis"
+    }
+  }, value || "—"));
+  const temAlertas = prioAtiva || reservaCard || pecasPend > 0 || fipePct !== null || mostrarCustoParado || garantiaDias !== null || alerta;
+  return /*#__PURE__*/React.createElement("div", {
+    onClick: onClick,
+    style: {
+      background: C.card,
+      border: `1px solid ${prioAtiva === "Alta" ? C.error : prestadorAtrasado ? C.error : prioAtiva === "Média" ? C.warning : alerta ? C.warning : prioAtiva === "Baixa" ? C.success : C.border}`,
+      borderRadius: 14,
+      overflow: "hidden",
+      cursor: "pointer",
+      transition: "border-color .2s",
+      boxShadow: "0 2px 8px #0003",
+      animation: prioAtiva === "Alta" ? "cardPulseAlta 1.6s ease-in-out infinite" : "none"
     }
   }, /*#__PURE__*/React.createElement("div", {
     style: {
-      width: 130,
+      display: "flex",
+      minHeight: 156
+    }
+  }, /*#__PURE__*/React.createElement("div", {
+    style: {
+      width: 136,
       flexShrink: 0,
       position: "relative",
       background: C.bg,
@@ -8458,10 +9063,10 @@ function CarCard({
   }, "\uD83D\uDCF8 ", car.fotos.length)), /*#__PURE__*/React.createElement("div", {
     style: {
       flex: 1,
-      padding: "10px 12px",
+      padding: "10px 12px 9px",
       display: "flex",
       flexDirection: "column",
-      justifyContent: "space-between",
+      gap: 8,
       minWidth: 0
     }
   }, /*#__PURE__*/React.createElement("div", null, /*#__PURE__*/React.createElement("div", {
@@ -8469,8 +9074,8 @@ function CarCard({
       display: "flex",
       justifyContent: "space-between",
       alignItems: "flex-start",
-      gap: 6,
-      marginBottom: 3
+      gap: 8,
+      marginBottom: 4
     }
   }, /*#__PURE__*/React.createElement("div", {
     style: {
@@ -8522,7 +9127,14 @@ function CarCard({
       color: C.textDim,
       marginTop: 2
     }
-  }, "Pre\xE7o n\xE3o definido"))), /*#__PURE__*/React.createElement("div", {
+  }, "Pre\xE7o n\xE3o definido")), /*#__PURE__*/React.createElement("div", {
+    style: {
+      display: "grid",
+      gridTemplateColumns: "repeat(auto-fit,minmax(104px,1fr))",
+      gap: 6,
+      marginTop: 7
+    }
+  }, InfoTile("📍", "Loja", car.loja || "Sem loja", C.info), InfoTile("🔧", "Prestador", prestadorTexto, emPrestador ? prestadorCol : C.textDim), InfoTile("🔒", "Reserva", reservaTexto, reservaCard ? C.warning : C.textDim), InfoTile("📅", "Agenda", agendaTexto || "Livre", agendaTexto ? C.info : C.textDim))), /*#__PURE__*/React.createElement("div", {
     style: {
       padding: "8px 12px 10px",
       borderTop: `1px solid ${C.border}`
@@ -8530,45 +9142,54 @@ function CarCard({
   }, /*#__PURE__*/React.createElement("div", {
     style: {
       display: "flex",
-      justifyContent: "space-between",
       alignItems: "center",
-      marginBottom: 5
+      justifyContent: "space-between",
+      gap: 8,
+      marginBottom: temAlertas ? 6 : 5
     }
-  }, /*#__PURE__*/React.createElement("div", {
+  }, /*#__PURE__*/React.createElement("span", {
+    style: {
+      background: saude.col + "18",
+      color: saude.col,
+      borderRadius: 8,
+      padding: "2px 8px",
+      fontSize: 9,
+      fontWeight: 900,
+      whiteSpace: "nowrap"
+    }
+  }, "Saúde ", saude.score), /*#__PURE__*/React.createElement("span", {
+    style: {
+      color: C.textMuted,
+      fontSize: 9,
+      fontWeight: 800,
+      whiteSpace: "nowrap"
+    }
+  }, "Preparação ", pct, "%")), temAlertas && /*#__PURE__*/React.createElement("div", {
     style: {
       display: "flex",
       gap: 4,
       flexWrap: "wrap",
-      flex: 1
+      marginBottom: 5
     }
-  }, car.loja && /*#__PURE__*/React.createElement("span", {
+  }, prioAtiva && /*#__PURE__*/React.createElement("span", {
     style: {
-      background: C.info + "20",
-      color: C.info,
+      background: prioCol + "20",
+      color: prioCol,
       borderRadius: 8,
       padding: "1px 7px",
       fontSize: 9,
-      fontWeight: 700
+      fontWeight: 800
     }
-  }, "\uD83D\uDCCD ", car.loja), car.prestadorAtual && car.prestadorAtual !== "Sem prestador" && /*#__PURE__*/React.createElement("span", {
+  }, prioAtiva === "Alta" ? "\uD83D\uDD25 ALTA" : "\u26A1 " + prioAtiva), reservaCard && /*#__PURE__*/React.createElement("span", {
     style: {
-      background: prestadorCol + "20",
-      color: prestadorCol,
+      background: C.warning + "20",
+      color: C.warning,
       borderRadius: 8,
       padding: "1px 7px",
       fontSize: 9,
-      fontWeight: 700
+      fontWeight: 800
     }
-  }, "\uD83D\uDD27 ", car.prestadorAtual), prestadorDias !== null && /*#__PURE__*/React.createElement("span", {
-    style: {
-      background: prestadorCol + "20",
-      color: prestadorCol,
-      borderRadius: 8,
-      padding: "1px 7px",
-      fontSize: 9,
-      fontWeight: 700
-    }
-  }, prestadorDias < 0 ? `Prazo +${Math.abs(prestadorDias)}d` : prestadorDias === 0 ? "Prazo hoje" : `Prazo ${prestadorDias}d`), pecasPend > 0 && /*#__PURE__*/React.createElement("span", {
+  }, "\uD83D\uDD12 Reservado", reservaCard.cliente ? " \xB7 " + reservaCard.cliente : ""), pecasPend > 0 && /*#__PURE__*/React.createElement("span", {
     style: {
       background: C.error + "20",
       color: C.error,
@@ -8586,16 +9207,7 @@ function CarCard({
       fontSize: 9,
       fontWeight: 700
     }
-  }, "FIPE ", fipePct > 0 ? "+" : "", fipePct, "%"), /*#__PURE__*/React.createElement("span", {
-    style: {
-      background: saude.col + "20",
-      color: saude.col,
-      borderRadius: 8,
-      padding: "1px 7px",
-      fontSize: 9,
-      fontWeight: 700
-    }
-  }, "Saúde ", saude.score), mostrarCustoParado && /*#__PURE__*/React.createElement("span", {
+  }, "FIPE ", fipePct > 0 ? "+" : "", fipePct, "%"), mostrarCustoParado && /*#__PURE__*/React.createElement("span", {
     style: {
       background: C.error + "20",
       color: C.error,
@@ -8622,16 +9234,15 @@ function CarCard({
       fontSize: 9,
       fontWeight: 700
     }
-  }, "\u26A0\uFE0F ", days, "d parado")), /*#__PURE__*/React.createElement("span", {
+  }, "\u26A0\uFE0F ", days, "d parado")), /*#__PURE__*/React.createElement("div", {
     style: {
-      fontSize: 11,
-      fontWeight: 700,
-      color: pct === 100 ? C.success : C.textMuted,
-      flexShrink: 0,
-      marginLeft: 6
+      display: "flex",
+      alignItems: "center",
+      gap: 7
     }
-  }, pct, "%")), /*#__PURE__*/React.createElement("div", {
+  }, /*#__PURE__*/React.createElement("div", {
     style: {
+      flex: 1,
       height: 4,
       background: C.border,
       borderRadius: 2,
@@ -8645,7 +9256,14 @@ function CarCard({
       borderRadius: 2,
       transition: "width .4s"
     }
-  })), car.status === "Aguardando Aprovação" && CAN.approve(user.role) && /*#__PURE__*/React.createElement("div", {
+  })), /*#__PURE__*/React.createElement("span", {
+    style: {
+      fontSize: 10,
+      fontWeight: 700,
+      color: pct === 100 ? C.success : C.textMuted,
+      flexShrink: 0
+    }
+  }, pct, "%")), car.status === "Aguardando Aprovação" && CAN.approve(user.role) && /*#__PURE__*/React.createElement("div", {
     style: {
       marginTop: 6,
       padding: "3px 8px",
@@ -8717,7 +9335,7 @@ function CatalogoPublico({
   function copiarLink() {
     const link = catalogoPublicoUrl(colaborador);
     const isLocalFile = /^file:/i.test(link);
-    navigator.clipboard.writeText(link).then(() => pushNotif(isLocalFile ? "Link local copiado. Para cliente abrir no celular, publique o catálogo em HTTPS." : colaborador ? "Link único do catálogo copiado" : "Link do catálogo copiado", isLocalFile ? "warning" : "success")).catch(() => pushNotif("Não foi possível copiar o link", "error"));
+    copyText(link).then(ok => ok ? pushNotif(isLocalFile ? "Link local copiado. Para cliente abrir no celular, publique o catálogo em HTTPS." : colaborador ? "Link único do catálogo copiado" : "Link do catálogo copiado", isLocalFile ? "warning" : "success") : pushNotif("Não foi possível copiar o link", "error"));
   }
   function trackCatalogo(evento, car) {
     const payload = catalogoTrackingPayload(car, colaborador);
@@ -8735,7 +9353,7 @@ function CatalogoPublico({
   function whatsapp(car) {
     trackCatalogo("Lead", car);
     if (!colaboradorNumero) pushNotif(canManageCatalogo ? "Cadastre o WhatsApp do colaborador para direcionar o cliente." : "WhatsApp do atendimento indisponível no momento.", "warning");
-    window.open(catalogoWhatsappUrl(car, colaborador), "_blank");
+    window.open(catalogoWhatsappUrl(car, colaborador), "_blank", "noopener,noreferrer");
   }
   function CatalogIntro() {
     return /*#__PURE__*/React.createElement("div", {
@@ -10861,7 +11479,7 @@ function ModoTVScreen({
       passo: proximoPasso(car, p)
     };
   });
-  const criticos = dados.filter(x => x.car.status !== "Pronto para Venda" && (x.saude.score < 80 || x.p.atrasado || x.p.pecasCompradas.length > 0 || x.p.pecasAComprar.length > 0 || x.p.parado)).sort((a, b) => (a.p.atrasado ? -1 : 0) - (b.p.atrasado ? -1 : 0) || a.saude.score - b.saude.score || b.dias - a.dias).slice(0, 8);
+  const criticos = dados.filter(x => x.car.status !== "Pronto para Venda" && (x.car.prioridade === "Alta" || x.saude.score < 80 || x.p.atrasado || x.p.pecasCompradas.length > 0 || x.p.pecasAComprar.length > 0 || x.p.parado)).sort((a, b) => (a.car.prioridade === "Alta" ? -1 : 0) - (b.car.prioridade === "Alta" ? -1 : 0) || (a.p.atrasado ? -1 : 0) - (b.p.atrasado ? -1 : 0) || a.saude.score - b.saude.score || b.dias - a.dias).slice(0, 8);
   const recentes = [...dados].sort((a, b) => b.ultimo.ts - a.ultimo.ts).slice(0, 6);
   const prestadoresAtrasados = dados.filter(x => x.p.atrasado).sort((a, b) => a.p.prazoPrestador - b.p.prazoPrestador);
   const pecasInstalar = dados.flatMap(x => x.p.pecasCompradas.map(peca => ({
@@ -11852,7 +12470,7 @@ function Dashboard({
     const s = saudePreparacao(c);
     const dias = daysSince(c.createdAt);
     const prestadorDias = c.prestadorAtual && c.prestadorAtual !== "Sem prestador" && c.prestadorPrazo ? daysUntil(c.prestadorPrazo) : null;
-    const motivo = prestadorDias !== null && prestadorDias < 0 ? `Prestador vencido há ${Math.abs(prestadorDias)}d` : p.pecasCompradas.length > 0 ? "Peça comprada sem instalar" : p.prep.pendentes > 0 ? `${p.prep.pendentes} item(ns) de preparação` : dias > 30 ? `${dias} dias em estoque` : c.status;
+    const motivo = c.prioridade === "Alta" ? "🔥 Prioridade ALTA — passar na frente" : prestadorDias !== null && prestadorDias < 0 ? `Prestador vencido há ${Math.abs(prestadorDias)}d` : p.pecasCompradas.length > 0 ? "Peça comprada sem instalar" : p.prep.pendentes > 0 ? `${p.prep.pendentes} item(ns) de preparação` : dias > 30 ? `${dias} dias em estoque` : c.status;
     return {
       car: c,
       p,
@@ -11861,7 +12479,7 @@ function Dashboard({
       prestadorDias,
       motivo
     };
-  }).filter(x => x.p.prepPendente || x.p.pecasCompradas.length > 0 || x.p.pecasAComprar.length > 0 || x.p.docsPend.length > 0 || x.p.emPrestador || x.dias > 30).sort((a, b) => (a.prestadorDias !== null && a.prestadorDias < 0 ? -1 : 0) - (b.prestadorDias !== null && b.prestadorDias < 0 ? -1 : 0) || a.score - b.score || b.p.prep.pendentes - a.p.prep.pendentes || b.dias - a.dias).slice(0, 3);
+  }).filter(x => x.car.prioridade === "Alta" || x.p.prepPendente || x.p.pecasCompradas.length > 0 || x.p.pecasAComprar.length > 0 || x.p.docsPend.length > 0 || x.p.emPrestador || x.dias > 30).sort((a, b) => (a.car.prioridade === "Alta" ? -1 : 0) - (b.car.prioridade === "Alta" ? -1 : 0) || (a.prestadorDias !== null && a.prestadorDias < 0 ? -1 : 0) - (b.prestadorDias !== null && b.prestadorDias < 0 ? -1 : 0) || a.score - b.score || b.p.prep.pendentes - a.p.prep.pendentes || b.dias - a.dias).slice(0, 3);
   const fil = cars.filter(c => {
     const matchV = verVendidos ? c.status === "Vendido" : c.status !== "Vendido";
     const matchS = verVendidos || fStatus === "Todos" || c.status === fStatus;
@@ -11869,7 +12487,7 @@ function Dashboard({
     const q = search.toLowerCase();
     const matchQ = !q || (c.name || "").toLowerCase().includes(q) || (c.plate || "").toLowerCase().includes(q) || (c.marca || "").toLowerCase().includes(q);
     return matchV && matchS && matchL && matchQ;
-  });
+  }).sort((a, b) => verVendidos ? 0 : prioridadeRank(a) - prioridadeRank(b));
   let lucroTotal = 0;
   if (CAN.seeCusto(user.role)) cars.filter(c => c.status === "Vendido").forEach(c => {
     const pv = Number(c.precoVenda) || 0;
@@ -12516,6 +13134,11 @@ function App() {
   const [returnTarget, setReturnTarget] = useState(null);
   const dashboardScrollRef = useRef(0);
   const restoreDashboardScrollRef = useRef(false);
+  const loadAllBusyRef = useRef(false);
+  const carsRef = useRef([]);
+  useEffect(() => {
+    carsRef.current = cars;
+  }, [cars]);
   applyPrepCategoriasConfig(prepCategorias);
   const notifs = useNotifications();
   useEffect(() => {
@@ -12547,7 +13170,7 @@ function App() {
   useEffect(() => {
     _addLog = entry => {
       setLogs(p => {
-        const upd = [entry, ...p].slice(0, 100);
+        const upd = [entry, ...p].slice(0, 500);
         sbSet("activity_log", upd).catch(() => {});
         return upd;
       });
@@ -12641,6 +13264,9 @@ function App() {
     prevNavDepthRef.current = navDepth;
   }, [navDepth]);
   async function loadAll() {
+    // Evita refreshes sobrepostos (ex.: Modo TV a cada 30s com internet lenta)
+    if (loadAllBusyRef.current) return;
+    loadAllBusyRef.current = true;
     try {
       const [dbUsers, dbCars, dbSup, dbPrest, dbDark, dbDesp, dbLogs, dbPrepCats, dbMetaDiaria, dbPecasEstoque] = await Promise.all([sbGet("users"), sbLoadCars(), sbGet("suppliers"), sbGet("prestadores"), sbGet("dark_mode"), sbGet("despesas_fixas"), sbGet("activity_log"), sbGet("prep_categorias"), sbGet("meta_diaria"), sbGet("pecas_estoque")]);
       if (dbUsers && Array.isArray(dbUsers) && dbUsers.length > 0) setUsers(dbUsers);else await sbSet("users", DEFAULT_USERS);
@@ -12663,14 +13289,27 @@ function App() {
       if (dbMetaDiaria !== null && dbMetaDiaria !== undefined && !Number.isNaN(Number(dbMetaDiaria))) setMetaDiaria(Math.max(0, Number(dbMetaDiaria)));
       if (dbPecasEstoque && Array.isArray(dbPecasEstoque)) setPecasEstoque(dbPecasEstoque);
       if (typeof dbDark === "boolean") setDarkMode(dbDark);
-      // Session: localStorage — each device keeps its own session
+      // Session: localStorage — cada aparelho mantém a própria sessão, mas
+      // revalidada contra o cadastro atual: usuário precisa existir, estar
+      // ativo e com a mesma senha; senão a sessão é descartada.
       try {
         const lsUser = localStorage.getItem("premier_session");
-        if (lsUser) { const u = JSON.parse(lsUser); if (u && u.id) setUser(u); }
+        if (lsUser) {
+          const u = JSON.parse(lsUser);
+          const listaAtual = dbUsers && Array.isArray(dbUsers) && dbUsers.length > 0 ? dbUsers : DEFAULT_USERS;
+          const atual = u && u.id ? listaAtual.find(x => x.id === u.id) : null;
+          if (atual && atual.ativo !== false && atual.password === u.password) {
+            setUser(atual);
+            try { localStorage.setItem("premier_session", JSON.stringify(atual)); } catch (e2) {}
+          } else {
+            try { localStorage.removeItem("premier_session"); } catch (e2) {}
+          }
+        }
       } catch(e) {}
     } catch (e) {
       console.error("Load error:", e);
     }
+    loadAllBusyRef.current = false;
     setReady(true);
   }
   async function saveUsers(u) {
@@ -12685,28 +13324,54 @@ function App() {
       await sbSet("cars", c);
     }
   }
+  // Salva um carro e RETORNA uma promessa que resolve em true/false conforme
+  // a gravação no servidor. Com 1 nova tentativa automática antes de avisar.
   function saveCar(car) {
-    setCars(prev => {
-      const exists = prev.some(c => c.id === car.id);
-      const upd = exists ? prev.map(c => c.id === car.id ? car : c) : [...prev, car];
-      if (_carsMode === "rows") {
-        sbSaveCar(car);
-      } else {
-        sbSet("cars", upd);
-      }
-      return upd;
-    });
+    const prev = carsRef.current || [];
+    const exists = prev.some(c => c.id === car.id);
+    const upd = exists ? prev.map(c => c.id === car.id ? car : c) : [...prev, car];
+    carsRef.current = upd;
+    setCars(upd);
+    return persistCar(car, upd);
   }
-  function removeCar(id) {
-    setCars(prev => {
-      const upd = prev.filter(c => c.id !== id);
-      if (_carsMode === "rows") {
-        sbDeleteCar(id);
-      } else {
-        sbSet("cars", upd);
+  async function persistCar(car, listaAtual) {
+    if (_carsMode === "rows") {
+      let res = await sbSaveCar(car);
+      if (!res.ok) {
+        await new Promise(r => setTimeout(r, 500));
+        res = await sbSaveCar(car);
       }
-      return upd;
-    });
+      if (res.ok && res.merged && res.car) {
+        // Adota a versão mesclada (alterações de outro usuário) na lista/ficha
+        carsRef.current = (carsRef.current || []).map(c => c.id === res.car.id ? res.car : c);
+        setCars(carsRef.current);
+        setSelectedCar(sc => sc && sc.id === res.car.id ? res.car : sc);
+      }
+      if (!res.ok) pushNotif("❌ Não foi possível salvar no servidor. Verifique a conexão e tente de novo.", "error");
+      return res.ok;
+    } else {
+      const lista = listaAtual || carsRef.current || [];
+      let ok = await sbSet("cars", lista);
+      if (!ok) {
+        await new Promise(r => setTimeout(r, 500));
+        ok = await sbSet("cars", lista);
+      }
+      if (!ok) pushNotif("❌ Não foi possível salvar no servidor. Verifique a conexão e tente de novo.", "error");
+      return ok;
+    }
+  }
+  async function removeCar(id) {
+    const upd = (carsRef.current || []).filter(c => c.id !== id);
+    carsRef.current = upd;
+    setCars(upd);
+    let ok;
+    if (_carsMode === "rows") {
+      ok = await sbDeleteCar(id);
+    } else {
+      ok = await sbSet("cars", upd);
+    }
+    if (!ok) pushNotif("❌ Não foi possível remover no servidor. Verifique a conexão.", "error");
+    return ok;
   }
   async function saveSuppliers(s) {
     setSuppliers(s);
@@ -12895,7 +13560,7 @@ function App() {
     onBack: backFromCarDetail,
     onHome: closeToDashboard,
     onSave: updated => {
-      saveCar(updated);
+      const p = saveCar(updated);
       setSelectedCar(updated);
       if (updated.status !== selectedCar.status) {
         pushLog(`Status alterado: ${selectedCar.name} → ${updated.status}`, user.name, "info");
@@ -12906,6 +13571,7 @@ function App() {
       if (updated.status === "Vendido" && selectedCar.status !== "Vendido") {
         pushLog(`Venda registrada: ${updated.marca || ""} ${updated.name} por ${updated.precoVenda ? fmt(updated.precoVenda) : "—"}`, user.name, "success");
       }
+      return p;
     },
     onDelete: id => {
       const car = cars.find(c => c.id === id);
@@ -13009,6 +13675,8 @@ function App() {
     onSave: (upd, newUser) => {
       saveUsers(upd);
       setUser(newUser);
+      // Mantém a sessão deste aparelho válida após trocar a própria senha
+      try { localStorage.setItem("premier_session", JSON.stringify(newUser)); } catch (e) {}
     },
     onClose: () => setShowChangePass(false)
   }), showRelatorio && CAN.financial(user.role) && /*#__PURE__*/React.createElement(RelatorioModal, {
