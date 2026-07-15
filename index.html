@@ -23,7 +23,8 @@
     @keyframes catalogDoorRight{0%,58%{transform:rotateY(0)}84%,100%{transform:rotateY(62deg)}}
     @keyframes catalogWheelSpin{to{transform:rotate(360deg)}}
     @keyframes catalogCardsIn{from{opacity:0;transform:translateY(18px)}to{opacity:1;transform:translateY(0)}}
-    @keyframes cardPulseAlta{0%,100%{box-shadow:0 0 0 0 rgba(239,68,68,.55)}50%{box-shadow:0 0 0 7px rgba(239,68,68,0)}}
+    @keyframes cardPulseAlta{0%,100%{box-shadow:0 0 0 0 rgba(239,68,68,.45),0 10px 26px rgba(239,68,68,.14)}50%{box-shadow:0 0 0 9px rgba(239,68,68,0),0 10px 30px rgba(239,68,68,.26)}}
+    @keyframes alertChipPulse{0%,100%{box-shadow:0 0 0 0 rgba(239,68,68,.38)}50%{box-shadow:0 0 0 5px rgba(239,68,68,0)}}
   </style>
 </head>
 <body>
@@ -442,7 +443,8 @@ function pendenciasDoCarro(car) {
   const docsPdfPendentes = [!car.documentoPdf ? "Documento PDF" : "", !car.vistoriaPdf ? "Vistoria PDF" : ""].filter(Boolean);
   const vendido = car.status === "Vendido";
   const pronto = car.status === "Pronto para Venda";
-  const prepPendente = !vendido && !pronto && (prep.pendentes > 0 || pecasAComprar.length > 0 || pecasCompradas.length > 0 || docsPend.length > 0 || docsPdfPendentes.length > 0 || emPrestador);
+  const prepPendente = !vendido && !pronto && (prep.pendentes > 0 || pecasAComprar.length > 0 || pecasCompradas.length > 0 || emPrestador);
+  const docsPendente = !vendido && !pronto && (docsPend.length > 0 || docsPdfPendentes.length > 0);
   return {
     pecasAComprar,
     pecasCompradas,
@@ -452,8 +454,70 @@ function pendenciasDoCarro(car) {
     emPrestador,
     prazoPrestador,
     prepPendente,
+    docsPendente,
     parado: !vendido && daysSince(car.createdAt) > 30,
     atrasado: prazoPrestador !== null && prazoPrestador < 0
+  };
+}
+function diagnosticoAcaoCarro(car) {
+  const p = pendenciasDoCarro(car);
+  const dias = daysSince(car.createdAt);
+  const saude = saudePreparacao(car);
+  const alta = car.prioridade === "Alta";
+  const media = car.prioridade === "Média";
+  const score = Math.max(0, Math.round((alta ? 45 : media ? 20 : 0) + (p.atrasado ? 42 + Math.abs(p.prazoPrestador || 0) * 2 : 0) + p.pecasCompradas.length * 18 + p.pecasAComprar.length * 12 + p.prep.pendentes * 3 + (p.emPrestador ? 8 : 0) + (p.parado ? Math.min(35, dias - 30) : 0) + Math.max(0, 80 - saude.score) / 2));
+  let label = "Conferir liberação";
+  let motivo = "";
+  let col = C.info;
+  if (car.status === "Vendido") {
+    label = "Vendido";
+    motivo = "Veículo fora da preparação";
+    col = C.textMuted;
+  } else if (p.atrasado) {
+    label = `Cobrar ${car.prestadorAtual || "prestador"}`;
+    motivo = `Prazo vencido há ${Math.abs(p.prazoPrestador || 0)}d`;
+    col = C.error;
+  } else if (p.pecasCompradas.length > 0) {
+    label = `Instalar ${p.pecasCompradas[0].nome || "peça comprada"}`;
+    motivo = `${p.pecasCompradas.length} peça(s) comprada(s) sem instalar`;
+    col = C.error;
+  } else if (p.pecasAComprar.length > 0) {
+    label = `Comprar/orçar ${p.pecasAComprar[0].nome || "peça"}`;
+    motivo = `${p.pecasAComprar.length} peça(s) a comprar/orçar`;
+    col = C.warning;
+  } else if (p.emPrestador) {
+    const prazo = p.prazoPrestador === null ? "" : p.prazoPrestador === 0 ? "vence hoje" : p.prazoPrestador > 0 ? `vence em ${p.prazoPrestador}d` : `vencido há ${Math.abs(p.prazoPrestador)}d`;
+    label = `Acompanhar ${car.prestadorAtual}`;
+    motivo = prazo || "Carro fora da loja";
+    col = p.prazoPrestador !== null && p.prazoPrestador <= 1 ? C.warning : C.info;
+  } else if (p.prep.categorias.length > 0) {
+    label = `Executar ${p.prep.categorias[0].label}`;
+    motivo = `${p.prep.pendentes} item(ns) de preparação`;
+    col = media || alta ? C.warning : C.info;
+  } else if (p.docsPend.length > 0 || p.docsPdfPendentes.length > 0) {
+    label = "Regularizar documentos";
+    motivo = `${p.docsPend.length + p.docsPdfPendentes.length} pendência(s) documental(is)`;
+    col = C.warning;
+  } else if (car.status !== "Pronto para Venda" && !car.precoVenda) {
+    label = "Definir preço de venda";
+    motivo = "Preço ainda não informado";
+    col = C.warning;
+  } else if (car.status !== "Pronto para Venda" && (!car.fotos || car.fotos.length === 0)) {
+    label = "Fazer fotos/anúncio";
+    motivo = "Sem fotos cadastradas";
+    col = C.warning;
+  } else if (car.status === "Pronto para Venda") {
+    label = "Pronto para venda";
+    motivo = "Sem bloqueio operacional";
+    col = C.success;
+  }
+  if (alta && col !== C.error) col = C.error;
+  return {
+    label,
+    motivo,
+    score,
+    col,
+    pendencias: p
   };
 }
 function despesasComTotalPecas(car, pecas) {
@@ -531,14 +595,6 @@ function saudePreparacao(car) {
     score -= Math.min(25, Math.ceil(p.prep.pendentes * 1.2));
     motivos.push(`${p.prep.pendentes} item(ns) de checklist`);
   }
-  if (p.docsPend.length > 0) {
-    score -= Math.min(18, p.docsPend.length * 3);
-    motivos.push(`${p.docsPend.length} documento(s)`);
-  }
-  if (p.docsPdfPendentes.length > 0) {
-    score -= p.docsPdfPendentes.length * 6;
-    motivos.push(p.docsPdfPendentes.join(", "));
-  }
   if (car.status !== "Vendido" && !car.precoVenda) {
     score -= 8;
     motivos.push("sem preço de venda");
@@ -586,7 +642,7 @@ function isCatalogRoute() {
     return false;
   }
 }
-function setCatalogRoute(active) {
+function setCatalogRoute(active, opts = {}) {
   try {
     const url = new URL(window.location.href);
     if (active) {
@@ -597,8 +653,13 @@ function setCatalogRoute(active) {
       url.searchParams.delete("catalogo");
       if (url.hash === "#catalogo") url.hash = "";
     }
-    window.history.pushState({}, "", url.toString());
-  } catch (e) {}
+    const next = url.toString();
+    if (next === window.location.href) return false;
+    window.history[opts.replace ? "replaceState" : "pushState"]({}, "", next);
+    return true;
+  } catch (e) {
+    return false;
+  }
 }
 function catalogoColaboradorSlug(user) {
   return (user && (user.username || user.id) || "").toString().trim();
@@ -809,6 +870,14 @@ function _snapshotCar(car, updatedAt) {
     _carsBaseline[car.id] = JSON.stringify(car);
   } catch (e) {}
 }
+function _sameUpdatedAt(a, b) {
+  if (!a || !b) return false;
+  if (String(a) === String(b)) return true;
+  const ta = Date.parse(a);
+  const tb = Date.parse(b);
+  if (!Number.isFinite(ta) || !Number.isFinite(tb)) return false;
+  return Math.abs(ta - tb) <= 10;
+}
 function _mergeCarConflict(mine, base, server) {
   // Começa da versão do servidor e aplica somente os campos que EU alterei
   // em relação à minha versão de referência (base). Histórico é unido.
@@ -867,7 +936,7 @@ async function sbSaveCar(carInput) {
     try {
       const { data: rows } = await getSB().from("premier_cars").select("data,updated_at").eq("id", car.id);
       const server = rows && rows[0];
-      if (server && server.updated_at && _carsMeta[car.id] && server.updated_at !== _carsMeta[car.id]) {
+      if (server && server.updated_at && _carsMeta[car.id] && !_sameUpdatedAt(server.updated_at, _carsMeta[car.id])) {
         const base = _carsBaseline[car.id] ? JSON.parse(_carsBaseline[car.id]) : null;
         toSave = _mergeCarConflict(car, base, { ...(server.data || {}), id: car.id });
         houveConflito = true;
@@ -3407,13 +3476,19 @@ function LogisticaModal({
     p.prep.categorias.forEach(cat => addGargalo(cat.label, 1, cat.pendentes, C.info));
     if (p.pecasAComprar.length > 0) addGargalo("Peças a comprar", 1, p.pecasAComprar.length, C.warning);
     if (p.pecasCompradas.length > 0) addGargalo("Peças compradas sem instalar", 1, p.pecasCompradas.length, C.error);
-    if (p.docsPend.length > 0 || p.docsPdfPendentes.length > 0) addGargalo("Documentos / vistoria", 1, p.docsPend.length + p.docsPdfPendentes.length, C.warning);
     if (p.atrasado) addGargalo("Prestador atrasado", 1, Math.abs(p.prazoPrestador || 0) || 1, C.error);
     if (p.parado) addGargalo("Carro parado +30d", 1, daysSince(c.createdAt), C.error);
     if (c.status !== "Vendido" && !c.precoVenda) addGargalo("Sem preço definido", 1, 1, C.warning);
     if (c.status !== "Vendido" && (!c.fotos || c.fotos.length === 0)) addGargalo("Sem fotos", 1, 1, C.warning);
   });
   const gargalos = [...gargaloMap.values()].sort((a, b) => b.pendencias - a.pendencias || b.carros - a.carros).slice(0, 8);
+  const filaInteligente = cars.filter(c => c.status !== "Vendido" && c.status !== "Pronto para Venda").map(c => {
+    const d = diagnosticoAcaoCarro(c);
+    return {
+      car: c,
+      ...d
+    };
+  }).filter(x => x.score > 0 || x.pendencias.prepPendente || x.pendencias.emPrestador).sort((a, b) => b.score - a.score || (a.pendencias.atrasado ? -1 : 0) - (b.pendencias.atrasado ? -1 : 0) || daysSince(b.car.createdAt) - daysSince(a.car.createdAt)).slice(0, 6);
   return /*#__PURE__*/React.createElement(Modal, {
     title: "\uD83D\uDD27 Log\xEDstica / Prestadores",
     onClose: onClose,
@@ -3568,6 +3643,83 @@ function LogisticaModal({
       }
     })));
   })), /*#__PURE__*/React.createElement("div", {
+    style: {
+      background: C.card,
+      border: `1px solid ${C.border}`,
+      borderRadius: 11,
+      padding: 13
+    }
+  }, /*#__PURE__*/React.createElement("div", {
+    style: {
+      color: C.red,
+      fontWeight: 900,
+      fontSize: 12,
+      marginBottom: 9,
+      letterSpacing: .5
+    }
+  }, "🧭 FILA INTELIGENTE"), filaInteligente.length === 0 ? /*#__PURE__*/React.createElement("div", {
+    style: {
+      color: C.textMuted,
+      fontSize: 12,
+      padding: "8px 0"
+    }
+  }, "Nenhuma próxima ação crítica agora.") : filaInteligente.map((item, idx) => /*#__PURE__*/React.createElement("button", {
+    key: item.car.id,
+    onClick: () => onSelectCar && onSelectCar(item.car),
+    style: {
+      width: "100%",
+      background: idx === 0 ? item.col + "10" : C.bg,
+      border: `1px solid ${idx === 0 ? item.col + "55" : C.border}`,
+      borderRadius: 9,
+      padding: "8px 9px",
+      marginBottom: 7,
+      cursor: "pointer",
+      textAlign: "left",
+      fontFamily: "inherit"
+    }
+  }, /*#__PURE__*/React.createElement("div", {
+    style: {
+      display: "flex",
+      alignItems: "center",
+      justifyContent: "space-between",
+      gap: 8,
+      marginBottom: 3
+    }
+  }, /*#__PURE__*/React.createElement("span", {
+    style: {
+      color: C.text,
+      fontSize: 12,
+      fontWeight: 900,
+      whiteSpace: "nowrap",
+      overflow: "hidden",
+      textOverflow: "ellipsis"
+    }
+  }, tituloCarro(item.car)), /*#__PURE__*/React.createElement("span", {
+    style: {
+      color: item.col,
+      fontSize: 10,
+      fontWeight: 900,
+      flexShrink: 0
+    }
+  }, "Score ", item.score)), /*#__PURE__*/React.createElement("div", {
+    style: {
+      color: item.col,
+      fontSize: 11,
+      fontWeight: 900,
+      whiteSpace: "nowrap",
+      overflow: "hidden",
+      textOverflow: "ellipsis"
+    }
+  }, item.label), /*#__PURE__*/React.createElement("div", {
+    style: {
+      color: C.textMuted,
+      fontSize: 10,
+      marginTop: 2,
+      whiteSpace: "nowrap",
+      overflow: "hidden",
+      textOverflow: "ellipsis"
+    }
+  }, item.car.plate || "Sem placa", " · ", item.motivo || item.car.status)))), /*#__PURE__*/React.createElement("div", {
     style: {
       background: C.card,
       border: `1px solid ${C.border}`,
@@ -5627,9 +5779,9 @@ function OverviewTab({
     }
   }, c.pct, "%")), /*#__PURE__*/React.createElement("div", {
     style: {
-      height: 4,
+      height: 6,
       background: C.border,
-      borderRadius: 2,
+      borderRadius: 999,
       overflow: "hidden"
     }
   }, /*#__PURE__*/React.createElement("div", {
@@ -8909,8 +9061,10 @@ function CarDetail({
 function CarCard({
   car,
   user,
-  onClick
+  onClick,
+  onOpenDetail
 }) {
+  const [expanded, setExpanded] = useState(false);
   let total = 0,
     done = 0;
   Object.entries(getPreparationCats(car)).forEach(([k, v]) => {
@@ -8943,27 +9097,80 @@ function CarCard({
   const prioAtiva = car.status !== "Vendido" ? car.prioridade : "";
   const prioCol = prioAtiva ? URG_COL[prioAtiva] : null;
   const emPrestador = car.prestadorAtual && car.prestadorAtual !== "Sem prestador";
+  const prestadorTexto = emPrestador ? car.prestadorAtual + (prestadorDias !== null ? prestadorDias < 0 ? ` · venceu +${Math.abs(prestadorDias)}d` : prestadorDias === 0 ? " · vence hoje" : ` · ${prestadorDias}d` : "") : "Na loja";
+  const diag = diagnosticoAcaoCarro(car);
+  const pCard = diag.pendencias;
+  const resumoPendenciasCard = [...pCard.prep.categorias.map(cat => ({
+    tipo: "Preparo",
+    txt: `${cat.label}: ${cat.pendentes} item(ns)`,
+    col: C.info,
+    tab: cat.key
+  })), ...pCard.pecasCompradas.map(peca => ({
+    tipo: "Peça",
+    txt: `${peca.nome || "Peça"} comprada sem instalar`,
+    col: C.error,
+    tab: "pecas"
+  })), ...pCard.pecasAComprar.map(peca => ({
+    tipo: "Compra",
+    txt: `${peca.nome || "Peça"} a comprar/orçar`,
+    col: C.warning,
+    tab: "pecas"
+  })), ...pCard.docsPend.slice(0, 2).map(doc => ({
+    tipo: "Doc",
+    txt: `${doc.nome || "Documento"} pendente`,
+    col: C.warning,
+    tab: "documentos"
+  })), ...pCard.docsPdfPendentes.map(nome => ({
+    tipo: "Doc",
+    txt: `${nome} pendente`,
+    col: C.warning,
+    tab: "documentos"
+  })), ...(pCard.emPrestador ? [{
+    tipo: "Prest.",
+    txt: prestadorTexto,
+    col: prestadorCol,
+    tab: "prestador"
+  }] : [])].slice(0, 6);
+  const totalPendenciasCard = pCard.prep.pendentes + pCard.pecasCompradas.length + pCard.pecasAComprar.length + pCard.docsPend.length + pCard.docsPdfPendentes.length + (pCard.emPrestador ? 1 : 0);
+  const cardCritico = car.status !== "Vendido" && (prioAtiva === "Alta" || prestadorAtrasado || saude.score < 50 || diag.score >= 60);
+  const cardAtencao = car.status !== "Vendido" && !cardCritico && (prioAtiva === "Média" || alerta || pecasPend > 0 || saude.score < 80 || diag.score >= 30);
+  const cardBorderCol = cardCritico ? C.error : prioAtiva === "Média" ? C.warning : cardAtencao ? C.warning : prioAtiva === "Baixa" ? C.success : C.border;
+  const cardBorderWidth = cardCritico ? 3 : cardAtencao || prioAtiva ? 2 : 1;
+  const cardShadow = cardCritico ? "0 10px 28px rgba(239,68,68,.18),0 2px 8px #0004" : cardAtencao ? "0 8px 22px rgba(245,158,11,.12),0 2px 8px #0003" : "0 2px 8px #0003";
+  const proximaAcao = diag.label;
   const temAlertas = prioAtiva || reservaCard || pecasPend > 0 || fipePct !== null || mostrarCustoParado || garantiaDias !== null || alerta;
   return /*#__PURE__*/React.createElement("div", {
     onClick: onClick,
     style: {
       background: C.card,
-      border: `1px solid ${prioAtiva === "Alta" ? C.error : prestadorAtrasado ? C.error : prioAtiva === "Média" ? C.warning : alerta ? C.warning : prioAtiva === "Baixa" ? C.success : C.border}`,
+      border: `${cardBorderWidth}px solid ${cardBorderCol}`,
       borderRadius: 14,
       overflow: "hidden",
       cursor: "pointer",
-      transition: "border-color .2s",
-      boxShadow: "0 2px 8px #0003",
-      animation: prioAtiva === "Alta" ? "cardPulseAlta 1.6s ease-in-out infinite" : "none"
+      transition: "border-color .2s, box-shadow .2s",
+      boxShadow: cardShadow,
+      animation: cardCritico ? "cardPulseAlta 1.8s ease-in-out infinite" : "none",
+      position: "relative"
     }
   }, /*#__PURE__*/React.createElement("div", {
+    style: {
+      position: "absolute",
+      left: 0,
+      top: 0,
+      bottom: 0,
+      width: cardCritico ? 6 : prioAtiva || cardAtencao ? 5 : 3,
+      background: cardBorderCol,
+      opacity: cardCritico ? 1 : prioAtiva || cardAtencao ? .78 : .28,
+      zIndex: 1
+    }
+  }), /*#__PURE__*/React.createElement("div", {
     style: {
       display: "flex",
-      height: 120
+      height: 136
     }
   }, /*#__PURE__*/React.createElement("div", {
     style: {
-      width: 130,
+      width: 118,
       flexShrink: 0,
       position: "relative",
       background: C.bg,
@@ -9018,7 +9225,7 @@ function CarCard({
   }, "\uD83D\uDCF8 ", car.fotos.length)), /*#__PURE__*/React.createElement("div", {
     style: {
       flex: 1,
-      padding: "10px 12px",
+      padding: "10px 10px 9px 12px",
       display: "flex",
       flexDirection: "column",
       justifyContent: "space-between",
@@ -9040,13 +9247,13 @@ function CarCard({
     style: {
       fontSize: 10,
       color: C.red,
-      fontWeight: 700,
+      fontWeight: 900,
       marginBottom: 1
     }
   }, car.marca), /*#__PURE__*/React.createElement("div", {
     style: {
-      fontWeight: 700,
-      fontSize: 14,
+      fontWeight: 900,
+      fontSize: 15,
       color: C.text,
       whiteSpace: "nowrap",
       overflow: "hidden",
@@ -9058,9 +9265,9 @@ function CarCard({
       background: stCol + "22",
       color: stCol,
       borderRadius: 20,
-      padding: "2px 7px",
+      padding: "3px 8px",
       fontSize: 9,
-      fontWeight: 700,
+      fontWeight: 900,
       whiteSpace: "nowrap",
       flexShrink: 0
     }
@@ -9072,7 +9279,7 @@ function CarCard({
   }, car.plate || "—", car.year ? ` · ${car.year}` : "", car.color ? ` · ${car.color}` : "")), car.precoVenda ? /*#__PURE__*/React.createElement("div", {
     style: {
       fontSize: 16,
-      fontWeight: 800,
+      fontWeight: 900,
       color: C.success,
       marginTop: 2
     }
@@ -9084,13 +9291,13 @@ function CarCard({
     }
   }, "Pre\xE7o n\xE3o definido"))), /*#__PURE__*/React.createElement("div", {
     style: {
-      padding: "8px 12px 10px",
+      padding: "8px 10px 10px 14px",
       borderTop: `1px solid ${C.border}`
     }
   }, /*#__PURE__*/React.createElement("div", {
     style: {
-      display: "flex",
-      alignItems: "center",
+      display: "grid",
+      gridTemplateColumns: "1fr 1.35fr",
       gap: 5,
       marginBottom: 5
     }
@@ -9099,42 +9306,64 @@ function CarCard({
       background: C.info + "18",
       color: C.info,
       borderRadius: 7,
-      padding: "2px 7px",
+      padding: "3px 7px",
       fontSize: 9,
-      fontWeight: 700,
+      fontWeight: 800,
       whiteSpace: "nowrap",
       overflow: "hidden",
       textOverflow: "ellipsis",
-      maxWidth: "40%",
-      flexShrink: 0
+      minWidth: 0
     }
-  }, "📍 ", car.loja || "—"), /*#__PURE__*/React.createElement("span", {
+  }, "Loja · ", car.loja || "—"), /*#__PURE__*/React.createElement("span", {
     style: {
       background: (emPrestador ? prestadorCol : C.textDim) + "18",
       color: emPrestador ? prestadorCol : C.textMuted,
       borderRadius: 7,
-      padding: "2px 7px",
+      padding: "3px 7px",
       fontSize: 9,
-      fontWeight: 700,
-      flex: 1,
+      fontWeight: 800,
       minWidth: 0,
       whiteSpace: "nowrap",
       overflow: "hidden",
       textOverflow: "ellipsis",
-      textAlign: "center"
+      textAlign: "left"
     }
-  }, emPrestador ? "🔧 " + car.prestadorAtual + (prestadorDias !== null ? prestadorDias < 0 ? ` · venceu +${Math.abs(prestadorDias)}d` : prestadorDias === 0 ? " · vence hoje" : ` · ${prestadorDias}d` : "") : "🏠 Na loja"), /*#__PURE__*/React.createElement("span", {
+  }, "Prest. · ", prestadorTexto)), /*#__PURE__*/React.createElement("button", {
+    onClick: e => {
+      e.stopPropagation();
+      setExpanded(v => !v);
+    },
     style: {
-      background: saude.col + "18",
-      color: saude.col,
-      borderRadius: 7,
-      padding: "2px 7px",
-      fontSize: 9,
-      fontWeight: 800,
-      whiteSpace: "nowrap",
-      flexShrink: 0
+      width: "100%",
+      display: "flex",
+      alignItems: "center",
+      justifyContent: "space-between",
+      gap: 7,
+      background: diag.col + "12",
+      border: `1px solid ${diag.col}33`,
+      color: diag.col,
+      borderRadius: 8,
+      padding: "4px 8px",
+      fontSize: 10,
+      fontWeight: 900,
+      marginBottom: temAlertas ? 5 : 6,
+      cursor: totalPendenciasCard > 0 ? "pointer" : "default",
+      fontFamily: "inherit",
+      textAlign: "left"
     }
-  }, "Saúde ", saude.score)), temAlertas && /*#__PURE__*/React.createElement("div", {
+  }, /*#__PURE__*/React.createElement("span", {
+    style: {
+      whiteSpace: "nowrap",
+      overflow: "hidden",
+      textOverflow: "ellipsis",
+      minWidth: 0
+    }
+  }, "Próximo · ", proximaAcao), totalPendenciasCard > 0 && /*#__PURE__*/React.createElement("span", {
+    style: {
+      flexShrink: 0,
+      fontSize: 11
+    }
+  }, expanded ? "⌃" : "⌄")), temAlertas && /*#__PURE__*/React.createElement("div", {
     style: {
       display: "flex",
       gap: 4,
@@ -9148,7 +9377,8 @@ function CarCard({
       borderRadius: 8,
       padding: "1px 7px",
       fontSize: 9,
-      fontWeight: 800
+      fontWeight: 800,
+      animation: prioAtiva === "Alta" ? "alertChipPulse 1.7s ease-in-out infinite" : "none"
     }
   }, prioAtiva === "Alta" ? "\uD83D\uDD25 ALTA" : "\u26A1 " + prioAtiva), reservaCard && /*#__PURE__*/React.createElement("span", {
     style: {
@@ -9213,9 +9443,9 @@ function CarCard({
   }, /*#__PURE__*/React.createElement("div", {
     style: {
       flex: 1,
-      height: 4,
+      height: 6,
       background: C.border,
-      borderRadius: 2,
+      borderRadius: 999,
       overflow: "hidden"
     }
   }, /*#__PURE__*/React.createElement("div", {
@@ -9223,17 +9453,88 @@ function CarCard({
       height: "100%",
       width: `${pct}%`,
       background: pct === 100 ? C.success : C.red,
-      borderRadius: 2,
+      borderRadius: 999,
       transition: "width .4s"
     }
   })), /*#__PURE__*/React.createElement("span", {
     style: {
-      fontSize: 10,
-      fontWeight: 700,
+      fontSize: 11,
+      fontWeight: 800,
       color: pct === 100 ? C.success : C.textMuted,
       flexShrink: 0
     }
-  }, pct, "%")), car.status === "Aguardando Aprovação" && CAN.approve(user.role) && /*#__PURE__*/React.createElement("div", {
+  }, pct, "%")), expanded && totalPendenciasCard > 0 && /*#__PURE__*/React.createElement("div", {
+    onClick: e => e.stopPropagation(),
+    style: {
+      marginTop: 7,
+      display: "flex",
+      flexDirection: "column",
+      gap: 5,
+      background: C.bg,
+      border: `1px solid ${C.border}`,
+      borderRadius: 9,
+      padding: "7px 8px"
+    }
+  }, resumoPendenciasCard.length === 0 ? /*#__PURE__*/React.createElement("div", {
+    style: {
+      color: C.textMuted,
+      fontSize: 10,
+      fontWeight: 700
+    }
+  }, pCard.emPrestador ? `Acompanhar prazo com ${car.prestadorAtual}` : "Sem pendência detalhada.") : resumoPendenciasCard.map((item, idx) => /*#__PURE__*/React.createElement("button", {
+    key: idx,
+    onClick: e => {
+      e.stopPropagation();
+      if (onOpenDetail) onOpenDetail(car, item.tab || "overview");else if (onClick) onClick();
+    },
+    title: `Abrir ${item.tipo}`,
+    style: {
+      width: "100%",
+      display: "grid",
+      gridTemplateColumns: "48px minmax(0,1fr) 14px",
+      gap: 6,
+      alignItems: "center",
+      background: "transparent",
+      border: "none",
+      padding: "2px 0",
+      cursor: "pointer",
+      fontFamily: "inherit",
+      textAlign: "left"
+    }
+  }, /*#__PURE__*/React.createElement("span", {
+    style: {
+      background: item.col + "18",
+      color: item.col,
+      borderRadius: 999,
+      padding: "2px 6px",
+      fontSize: 9,
+      fontWeight: 900,
+      textAlign: "center"
+    }
+  }, item.tipo), /*#__PURE__*/React.createElement("span", {
+    style: {
+      color: C.text,
+      fontSize: 10,
+      fontWeight: 800,
+      whiteSpace: "nowrap",
+      overflow: "hidden",
+      textOverflow: "ellipsis"
+    }
+  }, item.txt), /*#__PURE__*/React.createElement("span", {
+    style: {
+      color: item.col,
+      fontSize: 13,
+      fontWeight: 900,
+      textAlign: "right"
+    }
+  }, "›"))), totalPendenciasCard > resumoPendenciasCard.length && /*#__PURE__*/React.createElement("div", {
+    style: {
+      color: C.textMuted,
+      fontSize: 9,
+      fontWeight: 800,
+      marginTop: 1
+    }
+  }, "+", totalPendenciasCard - resumoPendenciasCard.length, " outro(s) ponto(s) na ficha")), car.status === "Aguardando Aprovação" && CAN.approve(user.role) && /*#__PURE__*/React.createElement("div", {
     style: {
       marginTop: 6,
       padding: "3px 8px",
@@ -12410,13 +12711,46 @@ function Dashboard({
   const [fLoja, setFLoja] = useState(dashboardState.fLoja || "Todas");
   const [verVendidos, setVerVendidos] = useState(!!dashboardState.verVendidos);
   const [showMenu, setShowMenu] = useState(false);
+  const [metaOpen, setMetaOpen] = useState(false);
+  const [filtersOpen, setFiltersOpen] = useState(false);
   // Meta diária: edita localmente e só grava no banco após pausa na digitação
   const [metaLocal, setMetaLocal] = useState(() => String(Math.max(0, Number(metaDiaria) || 0)));
   const metaTimer = useRef(null);
+  const metaLocalRef = useRef(metaLocal);
+  const metaSavedRef = useRef(String(Math.max(0, Number(metaDiaria) || 0)));
   useEffect(() => {
-    setMetaLocal(String(Math.max(0, Number(metaDiaria) || 0)));
+    const normalized = String(Math.max(0, Number(metaDiaria) || 0));
+    metaSavedRef.current = normalized;
+    metaLocalRef.current = normalized;
+    setMetaLocal(normalized);
   }, [metaDiaria]);
-  useEffect(() => () => clearTimeout(metaTimer.current), []);
+  useEffect(() => {
+    metaLocalRef.current = metaLocal;
+  }, [metaLocal]);
+  function commitMetaDiaria(v = metaLocalRef.current) {
+    const n = Math.max(0, Number(v) || 0);
+    const normalized = String(n);
+    clearTimeout(metaTimer.current);
+    metaTimer.current = null;
+    metaLocalRef.current = normalized;
+    setMetaLocal(normalized);
+    if (normalized !== metaSavedRef.current && onChangeMetaDiaria) {
+      metaSavedRef.current = normalized;
+      onChangeMetaDiaria(n);
+    }
+  }
+  useEffect(() => () => {
+    if (!metaTimer.current) return;
+    const pending = metaLocalRef.current;
+    clearTimeout(metaTimer.current);
+    metaTimer.current = null;
+    const n = Math.max(0, Number(pending) || 0);
+    const normalized = String(n);
+    if (normalized !== metaSavedRef.current && onChangeMetaDiaria) {
+      metaSavedRef.current = normalized;
+      onChangeMetaDiaria(n);
+    }
+  }, [onChangeMetaDiaria]);
   useEffect(() => {
     if (!onDashboardStateChange) return;
     onDashboardStateChange({
@@ -12427,6 +12761,7 @@ function Dashboard({
     });
   }, [search, fStatus, fLoja, verVendidos]);
   const totalVendidos = cars.filter(c => c.status === "Vendido").length;
+  const totalAtivos = cars.filter(c => c.status !== "Vendido").length;
   const noPrestador = cars.filter(c => c.prestadorAtual && c.prestadorAtual !== "Sem prestador").length;
   const prestadorVencidos = cars.filter(c => c.prestadorAtual && c.prestadorAtual !== "Sem prestador" && c.prestadorPrazo && daysUntil(c.prestadorPrazo) < 0).length;
   const pecasPendentesCount = cars.filter(c => c.status !== "Vendido").reduce((s, c) => s + (pendenciasDoCarro(c).pecasAComprar.length + pendenciasDoCarro(c).pecasCompradas.length), 0);
@@ -12435,21 +12770,53 @@ function Dashboard({
   const liberadosHoje = cars.filter(c => c.status !== "Vendido" && ((c.aprovadoEm || "").startsWith(hojeBR) || (c.historico || []).some(h => (h.em || "").startsWith(hojeBR) && ((h.acao || "").includes("Aprovado") || (h.acao || "").includes("Pronto para Venda"))))).length;
   const faltamLiberar = Math.max(0, metaNum - liberadosHoje);
   const emPreparacaoHoje = cars.filter(c => c.status === "Em Preparação").length;
+  const metaPct = metaNum > 0 ? Math.min(100, Math.round(liberadosHoje / metaNum * 100)) : 0;
+  const metaCol = metaNum > 0 && faltamLiberar === 0 ? C.success : liberadosHoje > 0 ? C.warning : C.error;
+  const metaMensagem = metaNum <= 0 ? "Defina a meta do dia" : faltamLiberar === 0 ? "Meta batida hoje" : `${faltamLiberar} para bater a meta`;
   const prioridadesHoje = cars.filter(c => c.status !== "Vendido" && c.status !== "Pronto para Venda").map(c => {
     const p = pendenciasDoCarro(c);
     const s = saudePreparacao(c);
+    const diag = diagnosticoAcaoCarro(c);
     const dias = daysSince(c.createdAt);
     const prestadorDias = c.prestadorAtual && c.prestadorAtual !== "Sem prestador" && c.prestadorPrazo ? daysUntil(c.prestadorPrazo) : null;
-    const motivo = c.prioridade === "Alta" ? "🔥 Prioridade ALTA — passar na frente" : prestadorDias !== null && prestadorDias < 0 ? `Prestador vencido há ${Math.abs(prestadorDias)}d` : p.pecasCompradas.length > 0 ? "Peça comprada sem instalar" : p.prep.pendentes > 0 ? `${p.prep.pendentes} item(ns) de preparação` : dias > 30 ? `${dias} dias em estoque` : c.status;
+    const motivo = c.prioridade === "Alta" ? "🔥 Prioridade ALTA — passar na frente" : diag.motivo || diag.label;
     return {
       car: c,
       p,
       score: s.score,
+      urgScore: diag.score,
+      acao: diag.label,
+      acaoCol: diag.col,
       dias,
       prestadorDias,
       motivo
     };
-  }).filter(x => x.car.prioridade === "Alta" || x.p.prepPendente || x.p.pecasCompradas.length > 0 || x.p.pecasAComprar.length > 0 || x.p.docsPend.length > 0 || x.p.emPrestador || x.dias > 30).sort((a, b) => (a.car.prioridade === "Alta" ? -1 : 0) - (b.car.prioridade === "Alta" ? -1 : 0) || (a.prestadorDias !== null && a.prestadorDias < 0 ? -1 : 0) - (b.prestadorDias !== null && b.prestadorDias < 0 ? -1 : 0) || a.score - b.score || b.p.prep.pendentes - a.p.prep.pendentes || b.dias - a.dias).slice(0, 3);
+  }).filter(x => x.car.prioridade === "Alta" || x.urgScore > 0 || x.p.prepPendente || x.p.pecasCompradas.length > 0 || x.p.pecasAComprar.length > 0 || x.p.emPrestador || x.dias > 30).sort((a, b) => (a.car.prioridade === "Alta" ? -1 : 0) - (b.car.prioridade === "Alta" ? -1 : 0) || b.urgScore - a.urgScore || (a.prestadorDias !== null && a.prestadorDias < 0 ? -1 : 0) - (b.prestadorDias !== null && b.prestadorDias < 0 ? -1 : 0) || a.score - b.score || b.p.prep.pendentes - a.p.prep.pendentes || b.dias - a.dias).slice(0, 3);
+  const atalhosOperacao = [{
+    icon: "📌",
+    label: "Pendências",
+    info: prioridadesHoje.length ? `${prioridadesHoje.length} foco(s)` : "Hoje",
+    col: prioridadesHoje.length ? C.error : C.success,
+    fn: onOpenPendencias
+  }, {
+    icon: "🔩",
+    label: "Peças",
+    info: pecasPendentesCount ? `${pecasPendentesCount} pend.` : "Ok",
+    col: pecasPendentesCount ? C.warning : C.success,
+    fn: onOpenPecasPendentes
+  }, {
+    icon: "🔧",
+    label: "Logística",
+    info: prestadorVencidos ? `${prestadorVencidos} venc.` : `${noPrestador} fora`,
+    col: prestadorVencidos ? C.error : C.info,
+    fn: onOpenLogistica
+  }, {
+    icon: "📺",
+    label: "Modo TV",
+    info: "Painel",
+    col: C.info,
+    fn: onOpenModoTV
+  }];
   const fil = cars.filter(c => {
     const matchV = verVendidos ? c.status === "Vendido" : c.status !== "Vendido";
     const matchS = verVendidos || fStatus === "Todos" || c.status === fStatus;
@@ -12477,6 +12844,7 @@ function Dashboard({
     col: "#3B82F6",
     icon: "🔧"
   }];
+  const filtrosAtivosCount = (fLoja !== "Todas" ? 1 : 0) + (!verVendidos && fStatus !== "Todos" ? 1 : 0);
   const menuItems = [{
     icon: "📌",
     label: "Centro de Pendências",
@@ -12616,6 +12984,53 @@ function Dashboard({
     }
   }), /*#__PURE__*/React.createElement("div", {
     style: {
+      display: "flex",
+      gap: 6,
+      flex: 1,
+      minWidth: 0,
+      marginLeft: 10,
+      marginRight: 8
+    }
+  }, stats.map(s => /*#__PURE__*/React.createElement("div", {
+    key: s.l,
+    style: {
+      background: C.bg,
+      border: `1px solid ${C.border}`,
+      borderRadius: 9,
+      padding: "5px 7px",
+      display: "flex",
+      alignItems: "center",
+      gap: 5,
+      minWidth: 0,
+      flex: 1
+    }
+  }, /*#__PURE__*/React.createElement("span", {
+    style: {
+      fontSize: 13,
+      flexShrink: 0
+    }
+  }, s.icon), /*#__PURE__*/React.createElement("div", {
+    style: {
+      minWidth: 0
+    }
+  }, /*#__PURE__*/React.createElement("div", {
+    style: {
+      fontSize: 13,
+      fontWeight: 900,
+      color: s.col,
+      lineHeight: 1
+    }
+  }, s.v), /*#__PURE__*/React.createElement("div", {
+    style: {
+      fontSize: 8,
+      color: C.textMuted,
+      whiteSpace: "nowrap",
+      overflow: "hidden",
+      textOverflow: "ellipsis",
+      marginTop: 1
+    }
+  }, s.l))))), /*#__PURE__*/React.createElement("div", {
+    style: {
       textAlign: "right"
     }
   }, /*#__PURE__*/React.createElement("div", {
@@ -12645,7 +13060,7 @@ function Dashboard({
     }
   }, /*#__PURE__*/React.createElement("div", {
     style: {
-      display: "grid",
+      display: "none",
       gridTemplateColumns: "1fr 1fr",
       gap: 7,
       marginBottom: 10
@@ -12691,10 +13106,12 @@ function Dashboard({
   }, s.l))))), /*#__PURE__*/React.createElement("div", {
     style: {
       background: C.card,
-      border: `1px solid ${C.border}`,
-      borderRadius: 10,
-      padding: "10px 11px",
-      marginBottom: 10
+      border: `1px solid ${metaCol}55`,
+      borderRadius: 12,
+      padding: "11px 12px",
+      marginBottom: 10,
+      boxShadow: `0 8px 24px ${metaCol}18`,
+      overflow: "hidden"
     }
   }, /*#__PURE__*/React.createElement("div", {
     style: {
@@ -12708,27 +13125,43 @@ function Dashboard({
     style: {
       fontSize: 12,
       fontWeight: 800,
-      color: C.red
+      color: metaCol
     }
   }, "Meta Diária"), /*#__PURE__*/React.createElement("div", {
     style: {
       fontSize: 10,
       color: C.textMuted
     }
-  }, "Prioridade da operação hoje")), /*#__PURE__*/React.createElement("input", {
+  }, metaMensagem)), /*#__PURE__*/React.createElement("div", {
+    style: {
+      display: "flex",
+      alignItems: "center",
+      gap: 7,
+      flexShrink: 0
+    }
+  }, /*#__PURE__*/React.createElement("input", {
     type: "number",
     min: 0,
     value: metaLocal,
+    onClick: e => e.stopPropagation(),
     onChange: e => {
       const v = e.target.value;
       setMetaLocal(v);
+      metaLocalRef.current = v;
       clearTimeout(metaTimer.current);
-      metaTimer.current = setTimeout(() => onChangeMetaDiaria && onChangeMetaDiaria(v), 800);
+      metaTimer.current = setTimeout(() => commitMetaDiaria(v), 800);
+    },
+    onBlur: () => commitMetaDiaria(),
+    onKeyDown: e => {
+      if (e.key === "Enter") {
+        e.currentTarget.blur();
+        commitMetaDiaria();
+      }
     },
     style: {
       width: 62,
-      background: C.bg,
-      border: `1px solid ${C.border}`,
+      background: metaCol + "12",
+      border: `1px solid ${metaCol}55`,
       borderRadius: 8,
       color: C.text,
       padding: "7px 8px",
@@ -12737,7 +13170,41 @@ function Dashboard({
       textAlign: "center",
       outline: "none"
     }
-  })), /*#__PURE__*/React.createElement("div", {
+  }), /*#__PURE__*/React.createElement("button", {
+    onClick: e => {
+      e.stopPropagation();
+      setMetaOpen(v => !v);
+    },
+    title: metaOpen ? "Recolher meta diária" : "Abrir meta diária",
+    style: {
+      width: 34,
+      height: 34,
+      borderRadius: 9,
+      border: `1px solid ${metaCol}55`,
+      background: metaCol + "12",
+      color: metaCol,
+      cursor: "pointer",
+      fontSize: 15,
+      fontWeight: 900,
+      lineHeight: 1
+    }
+  }, metaOpen ? "⌃" : "⌄"))), /*#__PURE__*/React.createElement("div", {
+    style: {
+      height: 7,
+      background: C.border + "88",
+      borderRadius: 999,
+      overflow: "hidden",
+      marginBottom: 9
+    }
+  }, /*#__PURE__*/React.createElement("div", {
+    style: {
+      width: `${metaPct}%`,
+      height: "100%",
+      background: metaCol,
+      borderRadius: 999,
+      transition: "width .35s ease"
+    }
+  })), metaOpen && /*#__PURE__*/React.createElement("div", {
     style: {
       display: "grid",
       gridTemplateColumns: "repeat(3,1fr)",
@@ -12777,7 +13244,7 @@ function Dashboard({
       fontSize: 9,
       marginTop: 3
     }
-  }, x.l)))), prioridadesHoje.length > 0 && /*#__PURE__*/React.createElement("div", {
+  }, x.l)))), metaOpen && prioridadesHoje.length > 0 && /*#__PURE__*/React.createElement("div", {
     style: {
       display: "flex",
       flexDirection: "column",
@@ -12789,7 +13256,7 @@ function Dashboard({
     style: {
       width: "100%",
       background: C.bg,
-      border: `1px solid ${item.prestadorDias !== null && item.prestadorDias < 0 ? C.error + "55" : C.border}`,
+      border: `1px solid ${item.car.prioridade === "Alta" || item.prestadorDias !== null && item.prestadorDias < 0 ? C.error + "70" : item.score < 80 ? C.warning + "55" : C.border}`,
       borderRadius: 8,
       padding: "7px 9px",
       display: "flex",
@@ -12797,7 +13264,9 @@ function Dashboard({
       gap: 8,
       cursor: "pointer",
       textAlign: "left",
-      fontFamily: "inherit"
+      fontFamily: "inherit",
+      boxShadow: item.car.prioridade === "Alta" || item.score < 50 ? `0 0 0 1px ${C.error}18` : "none",
+      animation: item.car.prioridade === "Alta" || item.score < 50 ? "alertChipPulse 1.8s ease-in-out infinite" : "none"
     }
   }, /*#__PURE__*/React.createElement("div", {
     style: {
@@ -12821,11 +13290,71 @@ function Dashboard({
     }
   }, item.car.plate || "Sem placa", " · ", item.motivo)), /*#__PURE__*/React.createElement("span", {
     style: {
-      color: item.score < 50 ? C.error : item.score < 80 ? C.warning : C.success,
-      fontSize: 11,
+      color: item.acaoCol,
+      fontSize: 15,
       fontWeight: 900
     }
-  }, item.score))))), /*#__PURE__*/React.createElement("div", {
+  }, "›"))))), /*#__PURE__*/React.createElement("div", {
+    style: {
+      display: "grid",
+      gridTemplateColumns: "repeat(auto-fit,minmax(76px,1fr))",
+      gap: 7,
+      marginBottom: 10
+    }
+  }, atalhosOperacao.map(a => /*#__PURE__*/React.createElement("button", {
+    key: a.label,
+    onClick: a.fn,
+    style: {
+      minHeight: 54,
+      background: C.card,
+      border: `1px solid ${a.col}44`,
+      borderRadius: 11,
+      padding: "8px 7px",
+      color: C.text,
+      cursor: "pointer",
+      fontFamily: "inherit",
+      textAlign: "left",
+      boxShadow: `0 6px 18px ${a.col}10`
+    }
+  }, /*#__PURE__*/React.createElement("div", {
+    style: {
+      display: "flex",
+      alignItems: "center",
+      justifyContent: "space-between",
+      gap: 5,
+      marginBottom: 3
+    }
+  }, /*#__PURE__*/React.createElement("span", {
+    style: {
+      fontSize: 15
+    }
+  }, a.icon), /*#__PURE__*/React.createElement("span", {
+    style: {
+      width: 7,
+      height: 7,
+      borderRadius: "50%",
+      background: a.col,
+      boxShadow: `0 0 0 3px ${a.col}18`
+    }
+  })), /*#__PURE__*/React.createElement("div", {
+    style: {
+      fontSize: 10,
+      color: a.col,
+      fontWeight: 900,
+      whiteSpace: "nowrap",
+      overflow: "hidden",
+      textOverflow: "ellipsis"
+    }
+  }, a.label), /*#__PURE__*/React.createElement("div", {
+    style: {
+      fontSize: 9,
+      color: C.textMuted,
+      whiteSpace: "nowrap",
+      overflow: "hidden",
+      textOverflow: "ellipsis",
+      marginTop: 1
+    }
+  }, a.info)))), /*#__PURE__*/React.createElement("div", {
     style: {
       position: "relative",
       marginBottom: 7
@@ -12874,7 +13403,7 @@ function Dashboard({
     }
   }, [{
     k: false,
-    label: "\uD83C\uDFEC Estoque Ativo"
+    label: `\uD83C\uDFEC Estoque Ativo (${totalAtivos})`
   }, {
     k: true,
     label: `🤝 Vendidos${totalVendidos ? " (" + totalVendidos + ")" : ""}`
@@ -12893,9 +13422,28 @@ function Dashboard({
       fontFamily: "inherit",
       fontWeight: verVendidos === t.k ? 700 : 500
     }
-  }, t.label))), /*#__PURE__*/React.createElement("div", {
+  }, t.label))), /*#__PURE__*/React.createElement("button", {
+    onClick: () => setFiltersOpen(v => !v),
     style: {
+      width: "100%",
+      background: C.card,
+      border: `1px solid ${filtrosAtivosCount ? C.info + "66" : C.border}`,
+      borderRadius: 9,
+      padding: "8px 10px",
+      marginBottom: filtersOpen || filtrosAtivosCount ? 7 : 12,
+      color: filtrosAtivosCount ? C.info : C.textMuted,
+      cursor: "pointer",
+      fontSize: 11,
+      fontWeight: 900,
+      fontFamily: "inherit",
       display: "flex",
+      alignItems: "center",
+      justifyContent: "space-between",
+      gap: 8
+    }
+  }, /*#__PURE__*/React.createElement("span", null, "Filtros", filtrosAtivosCount ? ` · ${filtrosAtivosCount} ativo(s)` : ""), /*#__PURE__*/React.createElement("span", null, filtersOpen ? "⌃" : "⌄")), /*#__PURE__*/React.createElement("div", {
+    style: {
+      display: filtersOpen || filtrosAtivosCount ? "flex" : "none",
       gap: 6,
       marginBottom: 8,
       overflowX: "auto",
@@ -12919,7 +13467,7 @@ function Dashboard({
     }
   }, l))), !verVendidos && /*#__PURE__*/React.createElement("div", {
     style: {
-      display: "flex",
+      display: filtersOpen || filtrosAtivosCount ? "flex" : "none",
       gap: 6,
       marginBottom: 12,
       overflowX: "auto",
@@ -12972,7 +13520,8 @@ function Dashboard({
     key: car.id,
     car: car,
     user: user,
-    onClick: () => onSelectCar(car)
+    onClick: () => onSelectCar(car),
+    onOpenDetail: (car, tab) => onSelectCar(car, tab || "overview", "dashboard")
   }))))), showMenu && /*#__PURE__*/React.createElement("div", {
     style: {
       position: "fixed",
@@ -13235,7 +13784,10 @@ function App() {
   }, [navDepth]);
   async function loadAll() {
     // Evita refreshes sobrepostos (ex.: Modo TV a cada 30s com internet lenta)
-    if (loadAllBusyRef.current) return;
+    if (loadAllBusyRef.current) return {
+      ok: false,
+      busy: true
+    };
     loadAllBusyRef.current = true;
     try {
       const [dbUsers, dbCars, dbSup, dbPrest, dbDark, dbDesp, dbLogs, dbPrepCats, dbMetaDiaria, dbPecasEstoque] = await Promise.all([sbGet("users"), sbLoadCars(), sbGet("suppliers"), sbGet("prestadores"), sbGet("dark_mode"), sbGet("despesas_fixas"), sbGet("activity_log"), sbGet("prep_categorias"), sbGet("meta_diaria"), sbGet("pecas_estoque")]);
@@ -13276,11 +13828,18 @@ function App() {
           }
         }
       } catch(e) {}
+      return {
+        ok: true
+      };
     } catch (e) {
       console.error("Load error:", e);
+      return {
+        ok: false
+      };
+    } finally {
+      loadAllBusyRef.current = false;
+      setReady(true);
     }
-    loadAllBusyRef.current = false;
-    setReady(true);
   }
   async function saveUsers(u) {
     setUsers(u);
@@ -13387,9 +13946,17 @@ function App() {
     setDarkMode(nd);
     await sbSet("dark_mode", nd);
   }
-  function handleRefresh(opts = {}) {
-    loadAll();
-    if (!opts.silent) pushNotif("🔄 Dados atualizados", "success");
+  async function handleRefresh(opts = {}) {
+    const res = await loadAll();
+    if (opts.silent) return res;
+    if (res && res.busy) {
+      pushNotif("Atualização já está em andamento.", "info");
+    } else if (res && res.ok) {
+      pushNotif("🔄 Dados atualizados", "success");
+    } else {
+      pushNotif("⚠️ Não foi possível atualizar agora. Verifique a conexão.", "warning");
+    }
+    return res;
   }
   function rememberDashboardScroll() {
     try {
@@ -13401,7 +13968,9 @@ function App() {
     setView("dashboard");
   }
   function closeToDashboard() {
-    setCatalogRoute(false);
+    setCatalogRoute(false, {
+      replace: true
+    });
     setSelectedCar(null);
     setCarDetailTab("overview");
     setReturnTarget(null);
@@ -13453,7 +14022,9 @@ function App() {
     setView("catalogo");
   }
   function closeCatalogo() {
-    setCatalogRoute(false);
+    setCatalogRoute(false, {
+      replace: true
+    });
     if (returnTarget) {
       setView(returnTarget);
     } else {
@@ -13593,7 +14164,7 @@ function App() {
     onToggleDark: toggleDark,
     onLogout: logout,
     onRefresh: handleRefresh,
-    onSelectCar: car => openCar(car),
+    onSelectCar: (car, tab = "overview", backTarget = null) => openCar(car, tab, backTarget),
     onAddCar: () => {
       rememberDashboardScroll();
       setView("addCar");
