@@ -9138,7 +9138,25 @@ function CarCard({
   const cardBorderWidth = cardCritico ? 3 : cardAtencao || prioAtiva ? 2 : 1;
   const cardShadow = cardCritico ? "0 10px 28px rgba(239,68,68,.18),0 2px 8px #0004" : cardAtencao ? "0 8px 22px rgba(245,158,11,.12),0 2px 8px #0003" : "0 2px 8px #0003";
   const proximaAcao = diag.label;
-  const temAlertas = prioAtiva || reservaCard || pecasPend > 0 || fipePct !== null || mostrarCustoParado || garantiaDias !== null || alerta;
+  const temAlertas = prioAtiva || reservaCard || pecasPend > 0 || fipePct !== null || mostrarCustoParado || garantiaDias !== null;
+  const sideChipW = 108;
+  const sideChipStyle = (col, bg = col + "18") => ({
+    background: bg,
+    color: col,
+    borderRadius: 20,
+    padding: "3px 8px",
+    fontSize: 9,
+    fontWeight: 900,
+    whiteSpace: "nowrap",
+    overflow: "hidden",
+    textOverflow: "ellipsis",
+    width: sideChipW,
+    maxWidth: sideChipW,
+    textAlign: "center",
+    lineHeight: 1.22,
+    flexShrink: 0
+  });
+  const diasChipCol = alerta ? C.warning : dc;
   return /*#__PURE__*/React.createElement("div", {
     onClick: onClick,
     style: {
@@ -9198,19 +9216,7 @@ function CarCard({
     style: {
       fontSize: 36
     }
-  }, "\uD83D\uDE97")), /*#__PURE__*/React.createElement("div", {
-    style: {
-      position: "absolute",
-      bottom: 5,
-      left: 5,
-      background: "#000a",
-      borderRadius: 5,
-      padding: "2px 6px",
-      fontSize: 9,
-      color: dc,
-      fontWeight: 700
-    }
-  }, "\u23F1 ", days, "d"), car.fotos && car.fotos.length > 1 && /*#__PURE__*/React.createElement("div", {
+  }, "\uD83D\uDE97")), car.fotos && car.fotos.length > 1 && /*#__PURE__*/React.createElement("div", {
     style: {
       position: "absolute",
       top: 5,
@@ -9241,7 +9247,8 @@ function CarCard({
     }
   }, /*#__PURE__*/React.createElement("div", {
     style: {
-      minWidth: 0
+      minWidth: 0,
+      flex: 1
     }
   }, car.marca && /*#__PURE__*/React.createElement("div", {
     style: {
@@ -9260,23 +9267,37 @@ function CarCard({
       textOverflow: "ellipsis",
       lineHeight: 1.2
     }
-  }, car.name || "Sem nome")), /*#__PURE__*/React.createElement("span", {
-    style: {
-      background: stCol + "22",
-      color: stCol,
-      borderRadius: 20,
-      padding: "3px 8px",
-      fontSize: 9,
-      fontWeight: 900,
-      whiteSpace: "nowrap",
-      flexShrink: 0
-    }
-  }, car.status)), /*#__PURE__*/React.createElement("div", {
+  }, car.name || "Sem nome"), /*#__PURE__*/React.createElement("div", {
     style: {
       fontSize: 11,
-      color: C.textMuted
+      color: C.textMuted,
+      marginTop: 2,
+      whiteSpace: "nowrap",
+      overflow: "hidden",
+      textOverflow: "ellipsis"
     }
-  }, car.plate || "—", car.year ? ` · ${car.year}` : "", car.color ? ` · ${car.color}` : "")), car.precoVenda ? /*#__PURE__*/React.createElement("div", {
+  }, car.plate || "—", car.year ? ` · ${car.year}` : "", car.color ? ` · ${car.color}` : "")), /*#__PURE__*/React.createElement("div", {
+    style: {
+      display: "flex",
+      flexDirection: "column",
+      alignItems: "flex-end",
+      gap: 4,
+      flexShrink: 0,
+      width: sideChipW
+    }
+  }, /*#__PURE__*/React.createElement("span", {
+    title: car.status,
+    style: sideChipStyle(stCol, stCol + "22")
+  }, car.status), /*#__PURE__*/React.createElement("span", {
+    title: car.loja || "Sem loja",
+    style: sideChipStyle(C.info, C.info + "18")
+  }, "Loja · ", car.loja || "—"), /*#__PURE__*/React.createElement("span", {
+    title: prestadorTexto,
+    style: sideChipStyle(emPrestador ? prestadorCol : C.textMuted, (emPrestador ? prestadorCol : C.textDim) + "18")
+  }, "Prest. · ", prestadorTexto), /*#__PURE__*/React.createElement("span", {
+    title: `${days} dia(s) no estoque`,
+    style: sideChipStyle(diasChipCol, diasChipCol + "18")
+  }, days, "d parado"))), car.precoVenda ? /*#__PURE__*/React.createElement("div", {
     style: {
       fontSize: 16,
       fontWeight: 900,
@@ -9289,46 +9310,12 @@ function CarCard({
       color: C.textDim,
       marginTop: 2
     }
-  }, "Pre\xE7o n\xE3o definido"))), /*#__PURE__*/React.createElement("div", {
+  }, "Pre\xE7o n\xE3o definido")))), /*#__PURE__*/React.createElement("div", {
     style: {
-      padding: "8px 10px 10px 14px",
+      padding: "6px 10px 9px 14px",
       borderTop: `1px solid ${C.border}`
     }
-  }, /*#__PURE__*/React.createElement("div", {
-    style: {
-      display: "grid",
-      gridTemplateColumns: "1fr 1.35fr",
-      gap: 5,
-      marginBottom: 5
-    }
-  }, /*#__PURE__*/React.createElement("span", {
-    style: {
-      background: C.info + "18",
-      color: C.info,
-      borderRadius: 7,
-      padding: "3px 7px",
-      fontSize: 9,
-      fontWeight: 800,
-      whiteSpace: "nowrap",
-      overflow: "hidden",
-      textOverflow: "ellipsis",
-      minWidth: 0
-    }
-  }, "Loja · ", car.loja || "—"), /*#__PURE__*/React.createElement("span", {
-    style: {
-      background: (emPrestador ? prestadorCol : C.textDim) + "18",
-      color: emPrestador ? prestadorCol : C.textMuted,
-      borderRadius: 7,
-      padding: "3px 7px",
-      fontSize: 9,
-      fontWeight: 800,
-      minWidth: 0,
-      whiteSpace: "nowrap",
-      overflow: "hidden",
-      textOverflow: "ellipsis",
-      textAlign: "left"
-    }
-  }, "Prest. · ", prestadorTexto)), /*#__PURE__*/React.createElement("button", {
+  }, /*#__PURE__*/React.createElement("button", {
     onClick: e => {
       e.stopPropagation();
       setExpanded(v => !v);
@@ -9425,16 +9412,7 @@ function CarCard({
       fontSize: 9,
       fontWeight: 700
     }
-  }, garantiaDias < 0 ? "Garantia vencida" : garantiaDias <= 15 ? `Garantia ${garantiaDias}d` : "Garantia ativa"), alerta && /*#__PURE__*/React.createElement("span", {
-    style: {
-      background: C.warning + "20",
-      color: C.warning,
-      borderRadius: 8,
-      padding: "1px 7px",
-      fontSize: 9,
-      fontWeight: 700
-    }
-  }, "\u26A0\uFE0F ", days, "d parado")), /*#__PURE__*/React.createElement("div", {
+  }, garantiaDias < 0 ? "Garantia vencida" : garantiaDias <= 15 ? `Garantia ${garantiaDias}d` : "Garantia ativa")), /*#__PURE__*/React.createElement("div", {
     style: {
       display: "flex",
       alignItems: "center",
