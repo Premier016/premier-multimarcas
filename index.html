@@ -197,6 +197,13 @@ const addMonths = (d, n) => {
   return x.toISOString().split("T")[0];
 };
 const nowStr = () => new Date().toLocaleString("pt-BR");
+function activityTimeValue(v) {
+  const s = String(v || "");
+  const m = s.match(/(\d{1,2})\/(\d{1,2})\/(\d{4})(?:,\s*)?(\d{1,2}):(\d{2})(?::(\d{2}))?/);
+  if (m) return new Date(Number(m[3]), Number(m[2]) - 1, Number(m[1]), Number(m[4]) || 0, Number(m[5]) || 0, Number(m[6]) || 0).getTime();
+  const t = new Date(s).getTime();
+  return Number.isNaN(t) ? 0 : t;
+}
 const uid = () => Date.now().toString(36) + Math.random().toString(36).slice(2, 7);
 const safeBottom = extra => `calc(${extra}px + env(safe-area-inset-bottom, 0px))`;
 // Reserva de veículo: retorna a reserva se estiver válida (carro não vendido
@@ -533,6 +540,57 @@ function despesasComTotalPecas(car, pecas) {
 }
 function textoBusca(v) {
   return (v || "").normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase().trim();
+}
+function prepCatKeyFromLabel(car, label) {
+  const alvo = textoBusca(String(label || "").replace(/\s*\(inativa\)\s*$/i, ""));
+  if (!alvo) return "";
+  const cats = getPreparationCats(car);
+  const found = Object.entries(cats).find(([key, cat]) => {
+    const catLabel = textoBusca(String(cat.label || "").replace(/\s*\(inativa\)\s*$/i, ""));
+    return catLabel === alvo || textoBusca(key) === alvo;
+  });
+  return found ? found[0] : "";
+}
+function concluirPrepPorPecaInstalada(car, peca, userName) {
+  const catKey = prepCatKeyFromLabel(car, peca && peca.categoria);
+  if (!catKey) return {
+    car,
+    changed: false
+  };
+  const cat = prepCatInfo(catKey);
+  const data = prepDataForCar(car, catKey, cat);
+  const items = Array.isArray(data.items) ? data.items : [];
+  const pendentes = items.filter(i => i.status !== "concluído");
+  if (pendentes.length === 0) return {
+    car,
+    changed: false
+  };
+  const em = nowStr();
+  const nomePeca = peca && peca.nome ? peca.nome : "peça";
+  const next = {
+    ...car,
+    [catKey]: {
+      ...data,
+      items: items.map(i => i.status === "concluído" ? i : {
+        ...i,
+        status: "concluído",
+        changedBy: userName,
+        changedAt: em
+      })
+    },
+    historico: [...(car.historico || []), {
+      id: uid(),
+      acao: `Categoria ${cat.label} concluída automaticamente pela peça instalada: ${nomePeca}`,
+      por: userName,
+      em
+    }]
+  };
+  return {
+    car: next,
+    changed: true,
+    label: cat.label,
+    count: pendentes.length
+  };
 }
 function estoqueDisponivel(item) {
   return item && item.ativo !== false && Number(item.qtd || 0) > 0;
@@ -1430,13 +1488,69 @@ function MiniBarChart({
 function NotificacoesModal({
   logs,
   user,
+  users = [],
   onClear,
   onClose
 }) {
   const isAdmin = user && ["proprietario", "gerente"].includes(user.role);
   const [fTipo, setFTipo] = useState("todas");
   const [busca, setBusca] = useState("");
-  const base = isAdmin ? logs : logs.filter(l => l.vis === "operacional" || !l.vis);
+  const dataHojeInput = (() => {
+    const d = new Date();
+    return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+  })();
+  const [periodoResumo, setPeriodoResumo] = useState("hoje");
+  const [dataInicioResumo, setDataInicioResumo] = useState(dataHojeInput);
+  const [dataFimResumo, setDataFimResumo] = useState(dataHojeInput);
+  const registros = logs || [];
+  const inicioDia = d => new Date(d.getFullYear(), d.getMonth(), d.getDate());
+  const fimDia = d => new Date(d.getFullYear(), d.getMonth(), d.getDate(), 23, 59, 59, 999);
+  const parseInputDate = v => {
+    const m = String(v || "").match(/^(\d{4})-(\d{2})-(\d{2})$/);
+    return m ? new Date(Number(m[1]), Number(m[2]) - 1, Number(m[3])) : null;
+  };
+  const parseLogDate = l => {
+    const s = String(l.em || "");
+    const m = s.match(/(\d{1,2})\/(\d{1,2})\/(\d{4})/);
+    if (m) return new Date(Number(m[3]), Number(m[2]) - 1, Number(m[1]));
+    const d = new Date(s);
+    return Number.isNaN(d.getTime()) ? null : d;
+  };
+  const rangeResumo = (() => {
+    if (periodoResumo === "todos") return {
+      ini: null,
+      fim: null,
+      label: "Todo o histórico"
+    };
+    const hoje = inicioDia(new Date());
+    let ini = hoje;
+    let fim = fimDia(hoje);
+    if (periodoResumo === "7") {
+      ini = new Date(hoje);
+      ini.setDate(ini.getDate() - 6);
+    } else if (periodoResumo === "30") {
+      ini = new Date(hoje);
+      ini.setDate(ini.getDate() - 29);
+    } else if (periodoResumo === "custom") {
+      ini = parseInputDate(dataInicioResumo) || hoje;
+      fim = fimDia(parseInputDate(dataFimResumo) || ini);
+      if (ini > fim) {
+        const oldIni = ini;
+        ini = inicioDia(fim);
+        fim = fimDia(oldIni);
+      }
+    }
+    return {
+      ini: inicioDia(ini),
+      fim: fimDia(fim),
+      label: `${ini.toLocaleDateString("pt-BR")} a ${fim.toLocaleDateString("pt-BR")}`
+    };
+  })();
+  const registrosPeriodo = periodoResumo === "todos" ? registros : registros.filter(l => {
+    const d = parseLogDate(l);
+    return d && d >= rangeResumo.ini && d <= rangeResumo.fim;
+  });
+  const base = isAdmin ? registrosPeriodo : registros.filter(l => l.vis === "operacional" || !l.vis);
   const q = busca.trim().toLowerCase();
   const filtered = base.filter(l => {
     if (fTipo === "edicoes" && l.vis !== "gestao") return false;
@@ -1456,6 +1570,228 @@ function NotificacoesModal({
     warning: "⚠️",
     error: "❌"
   };
+  const logsPeriodo = registrosPeriodo;
+  const textoLog = l => `${l.acao || ""} ${l.por || ""}`;
+  const concluidosPeriodo = logsPeriodo.filter(l => /conclu|instalad|liberad|aprovad|pronto para venda|venda registrada|finalizad|feito/i.test(textoLog(l)));
+  const movimentadosPeriodo = logsPeriodo.filter(l => /moviment|loja alterad|transfer|enviado para|saída confirmad|saida confirmad|entrada|prestador/i.test(textoLog(l)));
+  const preenchidosPeriodo = logsPeriodo.filter(l => /preench|alterad|editad|cadastrad|observação|observacao|checklist|marc/i.test(textoLog(l)));
+  const loginsPeriodo = logsPeriodo.filter(l => /^(Login|Sessão aberta|Sessao aberta):/i.test(l.acao || ""));
+  const loginTextoPeriodo = loginsPeriodo.map(l => `${l.acao || ""} ${l.por || ""}`.toLowerCase()).join(" ");
+  const usuariosAtivos = (users || []).filter(u => u && u.ativo !== false);
+  const userLogouPeriodo = u => {
+    const nome = String(u.name || "").trim().toLowerCase();
+    const username = String(u.username || "").trim().toLowerCase();
+    return !!(nome && loginTextoPeriodo.includes(nome) || username && loginTextoPeriodo.includes(username));
+  };
+  const entraramPeriodo = usuariosAtivos.filter(userLogouPeriodo);
+  const semLoginPeriodo = usuariosAtivos.filter(u => !userLogouPeriodo(u));
+  const nomesCompactos = lista => lista.length ? lista.slice(0, 4).map(u => u.name || u.username || "Usuário").join(", ") + (lista.length > 4 ? ` +${lista.length - 4}` : "") : "Nenhum";
+  const resumoChip = (label, valor, cor, hint) => /*#__PURE__*/React.createElement("div", {
+    style: {
+      background: cor + "12",
+      border: `1px solid ${cor}33`,
+      borderRadius: 9,
+      padding: "9px 10px",
+      minWidth: 0
+    }
+  }, /*#__PURE__*/React.createElement("div", {
+    style: {
+      color: cor,
+      fontSize: 18,
+      fontWeight: 900,
+      lineHeight: 1
+    }
+  }, valor), /*#__PURE__*/React.createElement("div", {
+    style: {
+      color: C.text,
+      fontSize: 10,
+      fontWeight: 900,
+      marginTop: 4
+    }
+  }, label), hint && /*#__PURE__*/React.createElement("div", {
+    style: {
+      color: C.textMuted,
+      fontSize: 9,
+      marginTop: 2,
+      whiteSpace: "nowrap",
+      overflow: "hidden",
+      textOverflow: "ellipsis"
+    }
+  }, hint));
+  const resumoDiaNode = isAdmin ? /*#__PURE__*/React.createElement("div", {
+    style: {
+      background: C.card,
+      border: `1px solid ${C.red}33`,
+      borderRadius: 12,
+      padding: 12,
+      boxShadow: "0 8px 22px #00000010"
+    }
+  }, /*#__PURE__*/React.createElement("div", {
+    style: {
+      display: "flex",
+      justifyContent: "space-between",
+      gap: 8,
+      alignItems: "center",
+      marginBottom: 10
+    }
+  }, /*#__PURE__*/React.createElement("div", null, /*#__PURE__*/React.createElement("div", {
+    style: {
+      color: C.red,
+      fontSize: 13,
+      fontWeight: 900
+    }
+  }, "Resumo do Dia"), /*#__PURE__*/React.createElement("div", {
+    style: {
+      color: C.textMuted,
+      fontSize: 10
+    }
+  }, "Auditoria visível apenas para proprietário e gerente")), /*#__PURE__*/React.createElement("span", {
+    style: {
+      color: C.textMuted,
+      fontSize: 10,
+      fontWeight: 800,
+      whiteSpace: "nowrap"
+    }
+  }, rangeResumo.label)), /*#__PURE__*/React.createElement("div", {
+    style: {
+      display: "flex",
+      flexWrap: "wrap",
+      gap: 5,
+      marginBottom: 8
+    }
+  }, [["hoje", "Hoje"], ["7", "7 dias"], ["30", "30 dias"], ["custom", "Período"], ["todos", "Tudo"]].map(([k, lbl]) => /*#__PURE__*/React.createElement("button", {
+    key: k,
+    onClick: () => setPeriodoResumo(k),
+    style: {
+      flex: "1 1 72px",
+      padding: "6px 8px",
+      borderRadius: 8,
+      border: `1px solid ${periodoResumo === k ? C.red : C.border}`,
+      background: periodoResumo === k ? C.red + "18" : C.bg,
+      color: periodoResumo === k ? C.red : C.textMuted,
+      cursor: "pointer",
+      fontSize: 10,
+      fontWeight: 900,
+      fontFamily: "inherit"
+    }
+  }, lbl))), periodoResumo === "custom" && /*#__PURE__*/React.createElement("div", {
+    style: {
+      display: "grid",
+      gridTemplateColumns: "1fr 1fr",
+      gap: 7,
+      marginBottom: 9
+    }
+  }, /*#__PURE__*/React.createElement("input", {
+    type: "date",
+    value: dataInicioResumo,
+    onChange: e => setDataInicioResumo(e.target.value),
+    style: {
+      background: C.bg,
+      border: `1px solid ${C.border}`,
+      borderRadius: 8,
+      padding: "7px 8px",
+      color: C.text,
+      fontSize: 11,
+      fontFamily: "inherit",
+      outline: "none"
+    }
+  }), /*#__PURE__*/React.createElement("input", {
+    type: "date",
+    value: dataFimResumo,
+    onChange: e => setDataFimResumo(e.target.value),
+    style: {
+      background: C.bg,
+      border: `1px solid ${C.border}`,
+      borderRadius: 8,
+      padding: "7px 8px",
+      color: C.text,
+      fontSize: 11,
+      fontFamily: "inherit",
+      outline: "none"
+    }
+  })), /*#__PURE__*/React.createElement("div", {
+    style: {
+      display: "grid",
+      gridTemplateColumns: "repeat(auto-fit,minmax(105px,1fr))",
+      gap: 7
+    }
+  }, resumoChip("Ações", logsPeriodo.length, C.info, "no período"), resumoChip("Feito", concluidosPeriodo.length, C.success, "concluído/liberado"), resumoChip("Preenchido", preenchidosPeriodo.length, C.info, "edição/checklist"), resumoChip("Movimento", movimentadosPeriodo.length, C.warning, "loja/prestador"), resumoChip("Logins", entraramPeriodo.length, C.red, `${semLoginPeriodo.length} sem login`)), /*#__PURE__*/React.createElement("div", {
+    style: {
+      display: "grid",
+      gridTemplateColumns: "1fr 1fr",
+      gap: 7,
+      marginTop: 9
+    }
+  }, /*#__PURE__*/React.createElement("div", {
+    style: {
+      background: C.success + "0F",
+      border: `1px solid ${C.success}22`,
+      borderRadius: 8,
+      padding: "7px 9px"
+    }
+  }, /*#__PURE__*/React.createElement("div", {
+    style: {
+      color: C.success,
+      fontSize: 10,
+      fontWeight: 900,
+      marginBottom: 2
+    }
+  }, "Entraram no período"), /*#__PURE__*/React.createElement("div", {
+    style: {
+      color: C.text,
+      fontSize: 10,
+      lineHeight: 1.35
+    }
+  }, nomesCompactos(entraramPeriodo))), /*#__PURE__*/React.createElement("div", {
+    style: {
+      background: C.warning + "0F",
+      border: `1px solid ${C.warning}22`,
+      borderRadius: 8,
+      padding: "7px 9px"
+    }
+  }, /*#__PURE__*/React.createElement("div", {
+    style: {
+      color: C.warning,
+      fontSize: 10,
+      fontWeight: 900,
+      marginBottom: 2
+    }
+  }, "Sem login no período"), /*#__PURE__*/React.createElement("div", {
+    style: {
+      color: C.text,
+      fontSize: 10,
+      lineHeight: 1.35
+    }
+  }, nomesCompactos(semLoginPeriodo)))), logsPeriodo.length > 0 && /*#__PURE__*/React.createElement("div", {
+    style: {
+      marginTop: 9,
+      display: "flex",
+      flexDirection: "column",
+      gap: 4
+    }
+  }, logsPeriodo.slice(0, 3).map(l => /*#__PURE__*/React.createElement("div", {
+    key: "resumo-" + l.id,
+    style: {
+      display: "grid",
+      gridTemplateColumns: "1fr auto",
+      gap: 8,
+      color: C.textMuted,
+      fontSize: 10,
+      borderTop: `1px solid ${C.border}55`,
+      paddingTop: 5
+    }
+  }, /*#__PURE__*/React.createElement("span", {
+    style: {
+      minWidth: 0,
+      overflow: "hidden",
+      textOverflow: "ellipsis",
+      whiteSpace: "nowrap"
+    }
+  }, l.acao), /*#__PURE__*/React.createElement("b", {
+    style: {
+      color: C.text
+    }
+  }, l.por || "-"))))) : null;
   return /*#__PURE__*/React.createElement(Modal, {
     title: "\uD83D\uDD14 Atividades do Sistema",
     onClose: onClose,
@@ -1466,7 +1802,7 @@ function NotificacoesModal({
       flexDirection: "column",
       gap: 10
     }
-  }, /*#__PURE__*/React.createElement("div", {
+  }, resumoDiaNode, /*#__PURE__*/React.createElement("div", {
     style: {
       display: "flex",
       justifyContent: "space-between",
@@ -1481,7 +1817,7 @@ function NotificacoesModal({
     onClick: onClear,
     variant: "ghost",
     small: true
-  }, "Limpar tudo")), /*#__PURE__*/React.createElement("div", {
+  }, "Marcar lidas")), /*#__PURE__*/React.createElement("div", {
     style: {
       display: "flex",
       flexDirection: "column",
@@ -4345,7 +4681,7 @@ function PecasPendentesModal({
       compradoEm: nowStr(),
       obs: `${p.obs || ""}${p.obs ? "\n" : ""}Separada do estoque: ${estoqueItem.nome} (${qtdBaixa} un.)`
     } : p);
-    const updated = {
+    let updated = {
       ...car,
       pecas: updPecas,
       despesas: despesasComTotalPecas(car, updPecas),
@@ -4380,8 +4716,10 @@ function PecasPendentesModal({
         em: nowStr()
       }]
     };
+    const autoPrep = concluirPrepPorPecaInstalada(updated, peca, user.name);
+    if (autoPrep.changed) updated = autoPrep.car;
     onUpdateCar(updated);
-    pushNotif("Peça marcada como instalada", "success");
+    pushNotif(autoPrep.changed ? `Peça instalada e ${autoPrep.label} concluída` : "Peça marcada como instalada", "success");
   }
   return /*#__PURE__*/React.createElement(Modal, {
     title: "🔩 Central de Peças",
@@ -5096,7 +5434,7 @@ function PrestadorModal({
   const [saida, setSaida] = useState({
     data: car.prestadorSaida || todayISO(),
     km: car.prestadorKmSaida || car.km || "",
-    conclusao: "",
+    conclusao: car.prestadorServico || car.prestadorItens || "",
     responsavel: car.prestadorResponsavelSaida || user.name || ""
   });
   const allOk = items.every(it => it.ok);
@@ -8384,10 +8722,23 @@ function CarDetail({
   }
   function upField(k, v) {
     setCar(p => {
-      const n = {
+      let n = {
         ...p,
         [k]: v
       };
+      if (k === "pecas" && Array.isArray(v)) {
+        const antes = new Map((p.pecas || []).map(peca => [peca.id, peca]));
+        v.forEach(peca => {
+          const anterior = antes.get(peca.id);
+          if (peca.status === "Instalada" && (!anterior || anterior.status !== "Instalada")) {
+            const res = concluirPrepPorPecaInstalada(n, peca, user.name);
+            if (res.changed) {
+              n = res.car;
+              pushNotif(`✅ ${res.label} concluída pela peça instalada`, "success");
+            }
+          }
+        });
+      }
       autoSave(n);
       return n;
     });
@@ -9062,9 +9413,23 @@ function CarCard({
   car,
   user,
   onClick,
-  onOpenDetail
+  onOpenDetail,
+  onAddHistoryNote
 }) {
   const [expanded, setExpanded] = useState(false);
+  const obsFixaCard = car.observacaoCard || "";
+  const [quickObs, setQuickObs] = useState(() => obsFixaCard);
+  useEffect(() => {
+    setQuickObs(obsFixaCard);
+  }, [car.id, obsFixaCard]);
+  function salvarQuickObs() {
+    const texto = quickObs.trim();
+    if (!texto) return;
+    if (onAddHistoryNote) {
+      onAddHistoryNote(car, texto);
+      setQuickObs(texto);
+    }
+  }
   let total = 0,
     done = 0;
   Object.entries(getPreparationCats(car)).forEach(([k, v]) => {
@@ -9132,6 +9497,7 @@ function CarCard({
     tab: "prestador"
   }] : [])].slice(0, 6);
   const totalPendenciasCard = pCard.prep.pendentes + pCard.pecasCompradas.length + pCard.pecasAComprar.length + pCard.docsPend.length + pCard.docsPdfPendentes.length + (pCard.emPrestador ? 1 : 0);
+  const temSanfona = totalPendenciasCard > 0 || !!onAddHistoryNote;
   const cardCritico = car.status !== "Vendido" && (prioAtiva === "Alta" || prestadorAtrasado || saude.score < 50 || diag.score >= 60);
   const cardAtencao = car.status !== "Vendido" && !cardCritico && (prioAtiva === "Média" || alerta || pecasPend > 0 || saude.score < 80 || diag.score >= 30);
   const cardBorderCol = cardCritico ? C.error : prioAtiva === "Média" ? C.warning : cardAtencao ? C.warning : prioAtiva === "Baixa" ? C.success : C.border;
@@ -9334,7 +9700,7 @@ function CarCard({
       fontSize: 10,
       fontWeight: 900,
       marginBottom: temAlertas ? 5 : 6,
-      cursor: totalPendenciasCard > 0 ? "pointer" : "default",
+      cursor: temSanfona ? "pointer" : "default",
       fontFamily: "inherit",
       textAlign: "left"
     }
@@ -9345,7 +9711,7 @@ function CarCard({
       textOverflow: "ellipsis",
       minWidth: 0
     }
-  }, "Próximo · ", proximaAcao), totalPendenciasCard > 0 && /*#__PURE__*/React.createElement("span", {
+  }, "Próximo · ", proximaAcao), temSanfona && /*#__PURE__*/React.createElement("span", {
     style: {
       flexShrink: 0,
       fontSize: 11
@@ -9441,7 +9807,7 @@ function CarCard({
       color: pct === 100 ? C.success : C.textMuted,
       flexShrink: 0
     }
-  }, pct, "%")), expanded && totalPendenciasCard > 0 && /*#__PURE__*/React.createElement("div", {
+  }, pct, "%")), expanded && temSanfona && /*#__PURE__*/React.createElement("div", {
     onClick: e => e.stopPropagation(),
     style: {
       marginTop: 7,
@@ -9512,7 +9878,53 @@ function CarCard({
       fontWeight: 800,
       marginTop: 1
     }
-  }, "+", totalPendenciasCard - resumoPendenciasCard.length, " outro(s) ponto(s) na ficha")), car.status === "Aguardando Aprovação" && CAN.approve(user.role) && /*#__PURE__*/React.createElement("div", {
+  }, "+", totalPendenciasCard - resumoPendenciasCard.length, " outro(s) ponto(s) na ficha")), /*#__PURE__*/React.createElement("div", {
+    style: {
+      display: expanded && temSanfona ? "flex" : "none",
+      gap: 6,
+      alignItems: "flex-end",
+      borderTop: `1px solid ${C.border}66`,
+      paddingTop: 7,
+      marginTop: 2
+    }
+  }, /*#__PURE__*/React.createElement("textarea", {
+    value: quickObs,
+    onChange: e => setQuickObs(e.target.value),
+    onClick: e => e.stopPropagation(),
+    rows: 2,
+    placeholder: "Descrição / observação rápida para o histórico...",
+    style: {
+      flex: 1,
+      minHeight: 42,
+      resize: "vertical",
+      background: C.card,
+      border: `1px solid ${C.border}`,
+      borderRadius: 8,
+      padding: "7px 8px",
+      color: C.text,
+      fontSize: 11,
+      fontFamily: "inherit",
+      outline: "none"
+    }
+  }), /*#__PURE__*/React.createElement("button", {
+    onClick: e => {
+      e.stopPropagation();
+      salvarQuickObs();
+    },
+    disabled: !quickObs.trim() || !onAddHistoryNote,
+    style: {
+      background: quickObs.trim() && onAddHistoryNote ? C.success : C.border,
+      border: "none",
+      borderRadius: 8,
+      color: quickObs.trim() && onAddHistoryNote ? "#fff" : C.textDim,
+      cursor: quickObs.trim() && onAddHistoryNote ? "pointer" : "default",
+      padding: "8px 10px",
+      fontSize: 10,
+      fontWeight: 900,
+      fontFamily: "inherit",
+      whiteSpace: "nowrap"
+    }
+  }, "Salvar")), car.status === "Aguardando Aprovação" && CAN.approve(user.role) && /*#__PURE__*/React.createElement("div", {
     style: {
       marginTop: 6,
       padding: "3px 8px",
@@ -12661,6 +13073,7 @@ function Dashboard({
   onToggleDark,
   onLogout,
   onSelectCar,
+  onAddHistoryNote,
   onAddCar,
   onOpenSuppliers,
   onOpenUsers,
@@ -13499,7 +13912,8 @@ function Dashboard({
     car: car,
     user: user,
     onClick: () => onSelectCar(car),
-    onOpenDetail: (car, tab) => onSelectCar(car, tab || "overview", "dashboard")
+    onOpenDetail: (car, tab) => onSelectCar(car, tab || "overview", "dashboard"),
+    onAddHistoryNote: onAddHistoryNote
   }))))), showMenu && /*#__PURE__*/React.createElement("div", {
     style: {
       position: "fixed",
@@ -13605,6 +14019,13 @@ function App() {
   const [metaDiaria, setMetaDiaria] = useState(3);
   const [despesasFixas, setDespesasFixas] = useState([]);
   const [logs, setLogs] = useState([]);
+  const [avisosLidosEm, setAvisosLidosEm] = useState(() => {
+    try {
+      return localStorage.getItem("premier_avisos_lidos_em") || "";
+    } catch (e) {
+      return "";
+    }
+  });
   const [view, setView] = useState(() => isCatalogRoute() ? "catalogo" : "dashboard");
   const [selectedCar, setSelectedCar] = useState(null);
   const [carDetailTab, setCarDetailTab] = useState("overview");
@@ -13632,6 +14053,7 @@ function App() {
   const dashboardScrollRef = useRef(0);
   const restoreDashboardScrollRef = useRef(false);
   const loadAllBusyRef = useRef(false);
+  const sessionActivityLoggedRef = useRef(false);
   const carsRef = useRef([]);
   useEffect(() => {
     carsRef.current = cars;
@@ -13800,6 +14222,10 @@ function App() {
           const atual = u && u.id ? listaAtual.find(x => x.id === u.id) : null;
           if (atual && atual.ativo !== false && atual.password === u.password) {
             setUser(atual);
+            if (!sessionActivityLoggedRef.current) {
+              sessionActivityLoggedRef.current = true;
+              pushLog(`Sessão aberta: ${atual.name} (${ROLE_LABEL[atual.role] || atual.role})`, atual.name, "info", "todos");
+            }
             try { localStorage.setItem("premier_session", JSON.stringify(atual)); } catch (e2) {}
           } else {
             try { localStorage.removeItem("premier_session"); } catch (e2) {}
@@ -13908,11 +14334,13 @@ function App() {
   }
   async function login(u) {
     setUser(u);
+    sessionActivityLoggedRef.current = true;
     pushLog(`Login: ${u.name} (${ROLE_LABEL[u.role] || u.role})`, u.name, "info", "todos");
     try { localStorage.setItem("premier_session", JSON.stringify(u)); } catch(e) {}
   }
   async function logout() {
     setUser(null);
+    sessionActivityLoggedRef.current = false;
     setView("dashboard");
     setSelectedCar(null);
     setCarDetailTab("overview");
@@ -13935,6 +14363,27 @@ function App() {
       pushNotif("⚠️ Não foi possível atualizar agora. Verifique a conexão.", "warning");
     }
     return res;
+  }
+  function addHistoryNoteFromCard(car, texto) {
+    const obs = (texto || "").trim();
+    if (!car || !obs || !user) return;
+    const em = nowStr();
+    const updated = {
+      ...car,
+      observacaoCard: obs,
+      observacaoCardPor: user.name,
+      observacaoCardEm: em,
+      historico: [...(car.historico || []), {
+        id: uid(),
+        acao: `Observação rápida do card: ${obs}`,
+        por: user.name,
+        em: em
+      }]
+    };
+    saveCar(updated);
+    if (selectedCar && selectedCar.id === updated.id) setSelectedCar(updated);
+    pushLog(`Observação rápida no card: ${tituloCarro(car)} — ${obs}`, user.name, "info", "gestao");
+    pushNotif("Observação salva no histórico", "success");
   }
   function rememberDashboardScroll() {
     try {
@@ -14028,9 +14477,15 @@ function App() {
     if (target === "pesquisa") setShowPesquisaPlaca(true);
   }
   function clearLogs() {
-    setLogs([]);
-    sbSet("activity_log", []).catch(() => {});
+    const ts = new Date().toISOString();
+    setAvisosLidosEm(ts);
+    try {
+      localStorage.setItem("premier_avisos_lidos_em", ts);
+    } catch (e) {}
+    pushNotif("Avisos marcados como lidos. Auditoria preservada.", "success");
   }
+  const avisosLidosTime = activityTimeValue(avisosLidosEm);
+  const avisosNaoLidos = avisosLidosEm ? logs.filter(l => activityTimeValue(l.em) > avisosLidosTime).length : logs.length;
   const commonProps = {
     key: renderKey
   };
@@ -14138,11 +14593,12 @@ function App() {
     users: users,
     user: user,
     darkMode: darkMode,
-    logCount: logs.length,
+    logCount: avisosNaoLidos,
     onToggleDark: toggleDark,
     onLogout: logout,
     onRefresh: handleRefresh,
     onSelectCar: (car, tab = "overview", backTarget = null) => openCar(car, tab, backTarget),
+    onAddHistoryNote: addHistoryNoteFromCard,
     onAddCar: () => {
       rememberDashboardScroll();
       setView("addCar");
@@ -14234,6 +14690,7 @@ function App() {
   }), showNotifs && /*#__PURE__*/React.createElement(NotificacoesModal, {
     logs: logs,
     user: user,
+    users: users,
     onClear: clearLogs,
     onClose: () => setShowNotifs(false)
   }), /*#__PURE__*/React.createElement(NotifToasts, {
