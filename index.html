@@ -8,6 +8,21 @@
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent"/>
   <title>Premier Multimarcas</title>
   <link rel="manifest" href="manifest.json"/>
+  <script>
+    (() => {
+      try {
+        const params = new URLSearchParams(window.location.search);
+        if (params.get("catalogo") !== "1") return;
+        const target = new URL("catalogo.html", window.location.href);
+        ["colaborador", "vendedor", "consultor"].forEach(key => {
+          const value = params.get(key);
+          if (value) target.searchParams.set(key, value);
+        });
+        target.hash = "";
+        window.location.replace(target.toString());
+      } catch (e) {}
+    })();
+  </script>
   <style>
     *{box-sizing:border-box;-webkit-tap-highlight-color:transparent;}
     body{margin:0;background:#060606;color:#F0F0F0;font-family:system-ui,sans-serif;-webkit-font-smoothing:antialiased;}
@@ -748,16 +763,14 @@ function findCatalogoColaborador(users = [], fallbackUser = null) {
 }
 function catalogoPublicoUrl(colaborador) {
   try {
-    const url = new URL(window.location.href);
-    url.searchParams.set("catalogo", "1");
-    url.searchParams.delete("carro");
+    const url = new URL("catalogo.html", window.location.href);
     const slug = catalogoColaboradorSlug(colaborador);
     if (slug) url.searchParams.set("colaborador", slug);else url.searchParams.delete("colaborador");
     url.hash = "";
     return url.toString();
   } catch (e) {
     const slug = catalogoColaboradorSlug(colaborador);
-    return window.location.href.split("?")[0] + "?catalogo=1" + (slug ? "&colaborador=" + encodeURIComponent(slug) : "");
+    return "catalogo.html" + (slug ? "?colaborador=" + encodeURIComponent(slug) : "");
   }
 }
 function isCarDisponivelCatalogo(car) {

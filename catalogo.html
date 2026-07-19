@@ -1,0 +1,1388 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="theme-color" content="#ffffff">
+  <meta name="description" content="Catalogo publico de veiculos Premier Multimarcas">
+  <title>Catalogo Premier Multimarcas</title>
+  <link rel="icon" href="icon.png">
+  <style>
+    :root {
+      color-scheme: light;
+      --bg: #f2f4f7;
+      --surface: #ffffff;
+      --surface-alt: #f7f8fa;
+      --text: #17191d;
+      --muted: #646b75;
+      --line: #dfe3e8;
+      --red: #ce1d28;
+      --red-dark: #a9121b;
+      --green: #087f5b;
+      --green-soft: #e8f7f1;
+      --blue: #2563eb;
+      --blue-soft: #eaf1ff;
+      --amber: #b96500;
+      --amber-soft: #fff4df;
+      --shadow: 0 8px 22px rgba(24, 29, 36, .08);
+      --safe-top: env(safe-area-inset-top, 0px);
+      --safe-bottom: env(safe-area-inset-bottom, 0px);
+    }
+
+    * { box-sizing: border-box; }
+    html { scroll-behavior: smooth; }
+    body {
+      margin: 0;
+      min-width: 280px;
+      background: var(--bg);
+      color: var(--text);
+      font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      letter-spacing: 0;
+    }
+    button, input, select { font: inherit; }
+    button { letter-spacing: 0; }
+    button:focus-visible, input:focus-visible, select:focus-visible {
+      outline: 3px solid rgba(37, 99, 235, .25);
+      outline-offset: 2px;
+    }
+    img { max-width: 100%; }
+
+    .public-header {
+      position: sticky;
+      top: 0;
+      z-index: 40;
+      padding-top: var(--safe-top);
+      background: rgba(255, 255, 255, .96);
+      border-bottom: 1px solid var(--line);
+      backdrop-filter: blur(12px);
+    }
+    .header-inner {
+      width: min(1420px, 100%);
+      min-height: 66px;
+      margin: 0 auto;
+      padding: 8px clamp(12px, 3vw, 28px);
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 14px;
+    }
+    .brand {
+      min-width: 0;
+      display: flex;
+      align-items: center;
+      gap: 11px;
+    }
+    .brand img {
+      width: 52px;
+      height: 52px;
+      flex: 0 0 auto;
+      object-fit: contain;
+      background: #050505;
+      border-radius: 6px;
+    }
+    .brand-copy { min-width: 0; }
+    .brand-name {
+      margin: 0;
+      font-size: clamp(16px, 2.2vw, 21px);
+      line-height: 1.08;
+      font-weight: 900;
+      text-transform: uppercase;
+    }
+    .brand-subtitle {
+      margin-top: 3px;
+      color: var(--muted);
+      font-size: 11px;
+      font-weight: 700;
+    }
+    .seller-box {
+      min-width: 0;
+      text-align: right;
+    }
+    .seller-label {
+      color: var(--muted);
+      font-size: 10px;
+      font-weight: 700;
+      text-transform: uppercase;
+    }
+    .seller-name {
+      max-width: 210px;
+      margin-top: 2px;
+      overflow: hidden;
+      color: var(--green);
+      font-size: 13px;
+      font-weight: 900;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+
+    main {
+      width: min(1420px, 100%);
+      margin: 0 auto;
+      padding: 18px clamp(10px, 3vw, 28px) calc(32px + var(--safe-bottom));
+    }
+    .catalog-heading {
+      display: flex;
+      align-items: flex-end;
+      justify-content: space-between;
+      gap: 16px;
+      margin-bottom: 14px;
+    }
+    .catalog-heading h1 {
+      margin: 0;
+      font-size: clamp(22px, 4vw, 34px);
+      line-height: 1.08;
+      font-weight: 900;
+    }
+    .catalog-heading p {
+      max-width: 640px;
+      margin: 6px 0 0;
+      color: var(--muted);
+      font-size: 13px;
+      line-height: 1.45;
+    }
+    .stock-summary {
+      flex: 0 0 auto;
+      padding: 7px 10px;
+      border: 1px solid #efb8bc;
+      border-radius: 7px;
+      background: #fff5f5;
+      color: var(--red-dark);
+      font-size: 12px;
+      font-weight: 900;
+    }
+
+    .filters {
+      margin-bottom: 16px;
+      padding: 10px;
+      display: grid;
+      grid-template-columns: minmax(220px, 1.8fr) minmax(150px, .7fr) minmax(170px, .8fr) auto;
+      gap: 8px;
+      align-items: center;
+      background: var(--surface);
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      box-shadow: 0 3px 12px rgba(24, 29, 36, .04);
+    }
+    .field {
+      min-width: 0;
+      height: 42px;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      padding: 0 11px;
+      background: var(--surface-alt);
+      border: 1px solid var(--line);
+      border-radius: 7px;
+    }
+    .field-icon {
+      flex: 0 0 auto;
+      color: var(--muted);
+      font-size: 16px;
+      line-height: 1;
+    }
+    .field input, .field select {
+      width: 100%;
+      min-width: 0;
+      height: 100%;
+      padding: 0;
+      border: 0;
+      outline: 0;
+      background: transparent;
+      color: var(--text);
+      font-size: 13px;
+      font-weight: 650;
+    }
+    .field input::placeholder { color: #89909a; }
+    .clear-button {
+      width: 32px;
+      height: 32px;
+      flex: 0 0 32px;
+      display: none;
+      place-items: center;
+      padding: 0;
+      border: 0;
+      border-radius: 6px;
+      background: transparent;
+      color: var(--muted);
+      cursor: pointer;
+    }
+    .clear-button.visible { display: grid; }
+    .reset-button {
+      height: 42px;
+      padding: 0 14px;
+      border: 1px solid var(--line);
+      border-radius: 7px;
+      background: var(--surface);
+      color: var(--text);
+      font-size: 12px;
+      font-weight: 800;
+      cursor: pointer;
+    }
+    .reset-button:hover { background: var(--surface-alt); }
+    .status-tabs {
+      grid-column: 1 / -1;
+      display: flex;
+      gap: 6px;
+      overflow-x: auto;
+      scrollbar-width: none;
+    }
+    .status-tabs::-webkit-scrollbar { display: none; }
+    .status-tab {
+      min-height: 34px;
+      flex: 0 0 auto;
+      padding: 0 12px;
+      border: 1px solid var(--line);
+      border-radius: 17px;
+      background: var(--surface);
+      color: var(--muted);
+      font-size: 11px;
+      font-weight: 800;
+      cursor: pointer;
+    }
+    .status-tab.active {
+      border-color: var(--red);
+      background: #fff0f1;
+      color: var(--red-dark);
+    }
+
+    .results-bar {
+      min-height: 30px;
+      margin-bottom: 8px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 10px;
+      color: var(--muted);
+      font-size: 12px;
+    }
+    .results-bar strong { color: var(--text); }
+
+    .vehicle-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(min(100%, 292px), 1fr));
+      gap: 13px;
+      align-items: stretch;
+    }
+    .vehicle-card {
+      min-width: 0;
+      overflow: hidden;
+      display: flex;
+      flex-direction: column;
+      background: var(--surface);
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      box-shadow: var(--shadow);
+      transition: transform .18s ease, box-shadow .18s ease, border-color .18s ease;
+    }
+    .vehicle-card:hover {
+      transform: translateY(-2px);
+      border-color: #c9cfd6;
+      box-shadow: 0 12px 28px rgba(24, 29, 36, .12);
+    }
+    .vehicle-media {
+      position: relative;
+      width: 100%;
+      aspect-ratio: 4 / 3;
+      overflow: hidden;
+      background: #e5e8ec;
+      touch-action: pan-y;
+      cursor: pointer;
+    }
+    .vehicle-photo {
+      width: 100%;
+      height: 100%;
+      display: block;
+      object-fit: cover;
+    }
+    .photo-fallback {
+      width: 100%;
+      height: 100%;
+      display: grid;
+      place-items: center;
+      padding: 20px;
+      color: var(--muted);
+      font-size: 12px;
+      font-weight: 800;
+      text-align: center;
+    }
+    .media-badges {
+      position: absolute;
+      top: 8px;
+      left: 8px;
+      right: 8px;
+      display: flex;
+      align-items: flex-start;
+      justify-content: space-between;
+      gap: 6px;
+      pointer-events: none;
+    }
+    .badge {
+      max-width: 75%;
+      overflow: hidden;
+      padding: 4px 7px;
+      border: 1px solid rgba(255,255,255,.72);
+      border-radius: 6px;
+      background: rgba(19, 22, 26, .82);
+      color: #fff;
+      font-size: 10px;
+      font-weight: 900;
+      line-height: 1.1;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+      box-shadow: 0 2px 6px rgba(0,0,0,.2);
+    }
+    .badge.ready { background: rgba(8, 127, 91, .92); }
+    .badge.prep { background: rgba(37, 99, 235, .92); }
+    .badge.soon { background: rgba(185, 101, 0, .92); }
+    .photo-count { margin-left: auto; }
+    .carousel-arrow {
+      position: absolute;
+      top: 50%;
+      z-index: 3;
+      width: 34px;
+      height: 40px;
+      display: grid;
+      place-items: center;
+      padding: 0;
+      transform: translateY(-50%);
+      border: 1px solid rgba(255,255,255,.65);
+      border-radius: 6px;
+      background: rgba(13, 15, 18, .68);
+      color: #fff;
+      font-size: 25px;
+      font-weight: 700;
+      line-height: 1;
+      cursor: pointer;
+    }
+    .carousel-arrow:hover { background: rgba(13, 15, 18, .9); }
+    .carousel-arrow.prev { left: 7px; }
+    .carousel-arrow.next { right: 7px; }
+    .carousel-dots {
+      position: absolute;
+      right: 7px;
+      bottom: 8px;
+      left: 7px;
+      z-index: 3;
+      display: flex;
+      justify-content: center;
+      gap: 5px;
+      pointer-events: none;
+    }
+    .carousel-dot {
+      width: 7px;
+      height: 7px;
+      padding: 0;
+      border: 0;
+      border-radius: 50%;
+      background: rgba(255, 255, 255, .62);
+      box-shadow: 0 1px 4px rgba(0,0,0,.55);
+      transition: width .15s ease, background .15s ease;
+    }
+    .carousel-dot.active {
+      width: 20px;
+      border-radius: 7px;
+      background: #fff;
+    }
+    .vehicle-content {
+      min-height: 245px;
+      padding: 12px;
+      display: flex;
+      flex: 1;
+      flex-direction: column;
+      gap: 8px;
+    }
+    .vehicle-brand {
+      color: var(--red);
+      font-size: 10px;
+      font-weight: 900;
+      text-transform: uppercase;
+    }
+    .vehicle-title {
+      margin: 2px 0 0;
+      font-size: 17px;
+      line-height: 1.2;
+      font-weight: 900;
+    }
+    .vehicle-facts {
+      min-height: 18px;
+      margin-top: 4px;
+      color: var(--muted);
+      font-size: 11px;
+      line-height: 1.45;
+    }
+    .profile-chip {
+      align-self: flex-start;
+      max-width: 100%;
+      overflow: hidden;
+      padding: 4px 7px;
+      border: 1px solid #bed1ff;
+      border-radius: 6px;
+      background: var(--blue-soft);
+      color: #1748ad;
+      font-size: 10px;
+      font-weight: 800;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+    .vehicle-description {
+      min-height: 34px;
+      display: -webkit-box;
+      overflow: hidden;
+      color: #454b53;
+      font-size: 11px;
+      line-height: 1.5;
+      -webkit-box-orient: vertical;
+      -webkit-line-clamp: 2;
+    }
+    .vehicle-price {
+      margin-top: auto;
+      color: var(--green);
+      font-size: 19px;
+      font-weight: 950;
+    }
+    .vehicle-actions {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 7px;
+      margin-top: 3px;
+    }
+    .action-button {
+      min-height: 40px;
+      padding: 0 9px;
+      border-radius: 7px;
+      font-size: 11px;
+      font-weight: 900;
+      cursor: pointer;
+    }
+    .action-button.primary {
+      border: 1px solid var(--green);
+      background: var(--green);
+      color: #fff;
+    }
+    .action-button.primary:hover { background: #066c4d; }
+    .action-button.secondary {
+      border: 1px solid var(--line);
+      background: var(--surface);
+      color: var(--text);
+    }
+    .action-button.secondary:hover { background: var(--surface-alt); }
+
+    .state-box {
+      grid-column: 1 / -1;
+      min-height: 260px;
+      display: grid;
+      place-items: center;
+      padding: 28px;
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      background: var(--surface);
+      color: var(--muted);
+      text-align: center;
+    }
+    .state-box strong {
+      display: block;
+      margin-bottom: 6px;
+      color: var(--text);
+      font-size: 16px;
+    }
+    .loading-mark {
+      width: 34px;
+      height: 34px;
+      margin: 0 auto 14px;
+      border: 4px solid #e3e6ea;
+      border-top-color: var(--red);
+      border-radius: 50%;
+      animation: spin .8s linear infinite;
+    }
+    @keyframes spin { to { transform: rotate(360deg); } }
+
+    dialog {
+      width: min(980px, calc(100% - 24px));
+      max-height: min(900px, calc(100dvh - 24px));
+      margin: auto;
+      padding: 0;
+      overflow: hidden;
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      background: var(--surface);
+      color: var(--text);
+      box-shadow: 0 28px 80px rgba(0, 0, 0, .3);
+    }
+    dialog::backdrop { background: rgba(9, 12, 16, .72); }
+    .dialog-shell {
+      max-height: min(900px, calc(100dvh - 24px));
+      display: flex;
+      flex-direction: column;
+    }
+    .dialog-header {
+      min-height: 54px;
+      padding: 8px 10px 8px 16px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 12px;
+      border-bottom: 1px solid var(--line);
+    }
+    .dialog-header strong {
+      overflow: hidden;
+      font-size: 14px;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+    .icon-button {
+      width: 38px;
+      height: 38px;
+      flex: 0 0 38px;
+      display: grid;
+      place-items: center;
+      padding: 0;
+      border: 1px solid var(--line);
+      border-radius: 7px;
+      background: var(--surface);
+      color: var(--text);
+      font-size: 19px;
+      font-weight: 800;
+      cursor: pointer;
+    }
+    .dialog-body {
+      overflow-y: auto;
+      overscroll-behavior: contain;
+    }
+    .detail-layout {
+      display: grid;
+      grid-template-columns: minmax(0, 1.15fr) minmax(310px, .85fr);
+      align-items: start;
+    }
+    .detail-media {
+      position: sticky;
+      top: 0;
+      aspect-ratio: 4 / 3;
+      overflow: hidden;
+      background: #e5e8ec;
+      touch-action: pan-y;
+    }
+    .detail-copy {
+      min-width: 0;
+      padding: 20px;
+    }
+    .detail-copy h2 {
+      margin: 4px 0 6px;
+      font-size: clamp(23px, 4vw, 32px);
+      line-height: 1.08;
+      font-weight: 950;
+    }
+    .detail-price {
+      margin-top: 15px;
+      color: var(--green);
+      font-size: 25px;
+      font-weight: 950;
+    }
+    .detail-section {
+      padding: 16px 0;
+      border-top: 1px solid var(--line);
+    }
+    .detail-section:first-of-type { margin-top: 15px; }
+    .detail-section h3 {
+      margin: 0 0 9px;
+      font-size: 12px;
+      font-weight: 900;
+      text-transform: uppercase;
+    }
+    .detail-section p {
+      margin: 0;
+      color: #41474f;
+      font-size: 13px;
+      line-height: 1.62;
+      white-space: pre-wrap;
+    }
+    .spec-grid {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 7px 14px;
+    }
+    .spec-item span {
+      display: block;
+      color: var(--muted);
+      font-size: 9px;
+      font-weight: 800;
+      text-transform: uppercase;
+    }
+    .spec-item strong {
+      display: block;
+      margin-top: 2px;
+      overflow-wrap: anywhere;
+      font-size: 12px;
+    }
+    .option-list {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 6px;
+    }
+    .option-item {
+      padding: 5px 8px;
+      border: 1px solid var(--line);
+      border-radius: 6px;
+      background: var(--surface-alt);
+      color: #41474f;
+      font-size: 10px;
+      font-weight: 750;
+    }
+    .faq-item {
+      padding: 10px 0;
+      border-top: 1px solid var(--line);
+    }
+    .faq-item:first-child { border-top: 0; padding-top: 0; }
+    .faq-question { font-size: 12px; font-weight: 900; }
+    .faq-answer { margin-top: 4px; color: var(--muted); font-size: 12px; line-height: 1.5; }
+    .dialog-cta {
+      position: sticky;
+      bottom: 0;
+      padding-top: 12px;
+      background: var(--surface);
+    }
+    .dialog-cta .action-button { width: 100%; min-height: 46px; }
+
+    @media (max-width: 800px) {
+      .filters { grid-template-columns: 1fr 1fr; }
+      .filters .search-field { grid-column: 1 / -1; }
+      .reset-button { grid-column: auto; }
+      .status-tabs { grid-column: 1 / -1; }
+      .detail-layout { grid-template-columns: 1fr; }
+      .detail-media { position: relative; }
+    }
+    @media (max-width: 560px) {
+      .header-inner { min-height: 60px; }
+      .brand img { width: 44px; height: 44px; }
+      .brand-name { font-size: 15px; }
+      .brand-subtitle { font-size: 10px; }
+      .seller-label { display: none; }
+      .seller-name { max-width: 105px; font-size: 11px; }
+      main { padding-top: 13px; }
+      .catalog-heading { align-items: flex-start; }
+      .catalog-heading h1 { font-size: 23px; }
+      .catalog-heading p { font-size: 12px; }
+      .stock-summary { padding: 6px 8px; font-size: 10px; }
+      .filters { grid-template-columns: 1fr; padding: 8px; }
+      .filters .search-field, .filters .field, .reset-button, .status-tabs { grid-column: 1; }
+      .vehicle-grid { gap: 11px; }
+      .vehicle-card { display: grid; grid-template-columns: 42% minmax(0, 58%); }
+      .vehicle-media { height: 100%; min-height: 250px; aspect-ratio: auto; }
+      .vehicle-content { min-height: 250px; padding: 10px; gap: 6px; }
+      .vehicle-title { font-size: 15px; }
+      .vehicle-facts { font-size: 10px; }
+      .vehicle-description { min-height: 30px; font-size: 10px; }
+      .vehicle-price { font-size: 16px; }
+      .vehicle-actions { grid-template-columns: 1fr; }
+      .action-button { min-height: 37px; font-size: 10px; }
+      .carousel-arrow { width: 30px; height: 36px; }
+      dialog { width: 100%; max-height: 100dvh; height: 100dvh; border: 0; border-radius: 0; }
+      .dialog-shell { max-height: 100dvh; height: 100%; padding-top: var(--safe-top); }
+      .detail-copy { padding: 15px; padding-bottom: calc(16px + var(--safe-bottom)); }
+    }
+    @media (max-width: 390px) {
+      .vehicle-card { grid-template-columns: 39% minmax(0, 61%); }
+      .vehicle-media, .vehicle-content { min-height: 260px; }
+      .vehicle-brand { font-size: 9px; }
+      .vehicle-title { font-size: 14px; }
+      .profile-chip { font-size: 9px; }
+      .vehicle-actions { gap: 5px; }
+    }
+    @media (prefers-reduced-motion: reduce) {
+      *, *::before, *::after { scroll-behavior: auto !important; transition: none !important; animation-duration: .01ms !important; }
+    }
+  </style>
+</head>
+<body>
+  <header class="public-header">
+    <div class="header-inner">
+      <div class="brand">
+        <img src="icon.png" alt="Premier Multimarcas">
+        <div class="brand-copy">
+          <p class="brand-name">Premier Multimarcas</p>
+          <div class="brand-subtitle">Catalogo de veiculos</div>
+        </div>
+      </div>
+      <div class="seller-box" id="seller-box" hidden>
+        <div class="seller-label">Seu atendimento</div>
+        <div class="seller-name" id="seller-name"></div>
+      </div>
+    </div>
+  </header>
+
+  <main>
+    <section class="catalog-heading" aria-labelledby="catalog-title">
+      <div>
+        <h1 id="catalog-title">Encontre seu proximo carro</h1>
+        <p>Veiculos das lojas Premier em um unico catalogo, incluindo os que estao na etapa final de preparacao.</p>
+      </div>
+      <div class="stock-summary" id="stock-summary">Carregando</div>
+    </section>
+
+    <section class="filters" aria-label="Filtros do catalogo">
+      <label class="field search-field">
+        <span class="field-icon" aria-hidden="true">&#128269;</span>
+        <input id="search-input" type="search" autocomplete="off" placeholder="Marca, modelo, ano ou caracteristica">
+        <button class="clear-button" id="clear-search" type="button" title="Limpar busca" aria-label="Limpar busca">&times;</button>
+      </label>
+      <label class="field">
+        <span class="field-icon" aria-hidden="true">R$</span>
+        <input id="price-input" type="number" min="0" step="1000" inputmode="numeric" placeholder="Preco maximo">
+      </label>
+      <label class="field">
+        <span class="field-icon" aria-hidden="true">&#9673;</span>
+        <select id="profile-select" aria-label="Perfil de carro">
+          <option value="Todos">Todos os perfis</option>
+        </select>
+      </label>
+      <button class="reset-button" id="reset-filters" type="button">Limpar filtros</button>
+      <div class="status-tabs" id="status-tabs" role="group" aria-label="Situacao do veiculo">
+        <button class="status-tab active" type="button" data-status="Todos">Todos</button>
+        <button class="status-tab" type="button" data-status="Prontos">Disponiveis</button>
+        <button class="status-tab" type="button" data-status="Preparacao">Preparacao final</button>
+        <button class="status-tab" type="button" data-status="EmBreve">Em breve</button>
+      </div>
+    </section>
+
+    <div class="results-bar">
+      <span id="results-count">Consultando estoque...</span>
+      <span id="seller-hint"></span>
+    </div>
+
+    <section class="vehicle-grid" id="vehicle-grid" aria-live="polite">
+      <div class="state-box">
+        <div><div class="loading-mark"></div><strong>Carregando veiculos</strong>Consultando o catalogo Premier.</div>
+      </div>
+    </section>
+  </main>
+
+  <dialog id="vehicle-dialog" aria-labelledby="dialog-title">
+    <div class="dialog-shell">
+      <header class="dialog-header">
+        <strong id="dialog-title">Detalhes do veiculo</strong>
+        <button class="icon-button" id="close-dialog" type="button" title="Fechar" aria-label="Fechar">&times;</button>
+      </header>
+      <div class="dialog-body" id="dialog-body"></div>
+    </div>
+  </dialog>
+
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.95.0/dist/umd/supabase.js"></script>
+  <script id="catalog-app">
+    (() => {
+      "use strict";
+
+      const SUPABASE_URL = "https://vjmmobduzchqnjrskffk.supabase.co";
+      const SUPABASE_PUBLISHABLE_KEY = "sb_publishable_EqUQ_sllkILr6LLP1lYKRQ_Uz7-Xpoh";
+      const VEHICLE_FIELDS = "id,marca,name,year,km,color,combustivel,opcionais,preco_venda,status,perfil_cliente,ficha_tecnica,descricao_anuncio,perguntas_frequentes,fotos,videos,source_updated_at,updated_at";
+      const SELLER_FIELDS = "id,username,slug,display_name,whatsapp_catalogo,active,updated_at";
+
+      const state = {
+        vehicles: [],
+        sellers: [],
+        seller: null,
+        search: "",
+        maxPrice: 0,
+        profile: "Todos",
+        status: "Todos",
+        cardPhotos: new Map(),
+        touchStarts: new Map(),
+        detailId: null,
+        detailPhoto: 0,
+        detailTouchStart: null
+      };
+
+      const dom = {
+        grid: document.getElementById("vehicle-grid"),
+        count: document.getElementById("results-count"),
+        stock: document.getElementById("stock-summary"),
+        sellerBox: document.getElementById("seller-box"),
+        sellerName: document.getElementById("seller-name"),
+        sellerHint: document.getElementById("seller-hint"),
+        search: document.getElementById("search-input"),
+        clearSearch: document.getElementById("clear-search"),
+        price: document.getElementById("price-input"),
+        profile: document.getElementById("profile-select"),
+        tabs: document.getElementById("status-tabs"),
+        reset: document.getElementById("reset-filters"),
+        dialog: document.getElementById("vehicle-dialog"),
+        dialogBody: document.getElementById("dialog-body"),
+        dialogTitle: document.getElementById("dialog-title"),
+        closeDialog: document.getElementById("close-dialog")
+      };
+
+      function create(tag, className, text) {
+        const node = document.createElement(tag);
+        if (className) node.className = className;
+        if (text !== undefined && text !== null) node.textContent = String(text);
+        return node;
+      }
+
+      function cleanText(value) {
+        return String(value ?? "").trim();
+      }
+
+      function titleOf(car) {
+        return [cleanText(car.marca), cleanText(car.name)].filter(Boolean).join(" ") || "Veiculo disponivel";
+      }
+
+      function money(value) {
+        const number = Number(value) || 0;
+        return number > 0
+          ? number.toLocaleString("pt-BR", { style: "currency", currency: "BRL" })
+          : "Consulte";
+      }
+
+      function numberPt(value) {
+        const number = Number(value) || 0;
+        return number > 0 ? number.toLocaleString("pt-BR") : "";
+      }
+
+      function digitsOnly(value) {
+        return cleanText(value).replace(/\D/g, "");
+      }
+
+      function whatsappNumber(seller) {
+        const raw = digitsOnly(seller && seller.whatsapp_catalogo);
+        if (!raw) return "";
+        if (raw.startsWith("55")) return raw;
+        if (raw.length === 10 || raw.length === 11) return "55" + raw;
+        return raw;
+      }
+
+      function safePhotos(car) {
+        const photos = Array.isArray(car && car.fotos) ? car.fotos : [];
+        return photos.map(item => {
+          const url = cleanText(typeof item === "string" ? item : item && item.url);
+          if (!/^https:\/\//i.test(url)) return null;
+          return { url };
+        }).filter(Boolean).slice(0, 20);
+      }
+
+      function statusMeta(car) {
+        const status = cleanText(car && car.status);
+        if (status === "Pronto para Venda") return { label: "Disponivel", className: "ready", order: 0 };
+        if (status === "Em Preparação") return { label: "Preparacao final", className: "prep", order: 1 };
+        if (status === "Aguardando Aprovação") return { label: "Em conferencia", className: "soon", order: 2 };
+        return { label: "Disponivel em breve", className: "soon", order: 3 };
+      }
+
+      function inferredProfiles(car) {
+        const options = Array.isArray(car.opcionais) ? car.opcionais.join(" ") : "";
+        const text = [car.marca, car.name, options, car.combustivel, car.ficha_tecnica, car.descricao_anuncio, car.perguntas_frequentes].join(" ").toLowerCase();
+        const price = Number(car.preco_venda) || 0;
+        const km = Number(car.km) || 0;
+        const profiles = new Set();
+        if (/suv|creta|hr-v|hrv|compass|renegade|tracker|t-cross|tcross|nivus|duster|kicks|ecosport|captur|sw4/.test(text)) profiles.add("SUV/Conforto");
+        if (/spin|doblo|zafira|fam[ií]lia|porta-malas|porta malas|7 lugares|sete lugares/.test(text)) profiles.add("Familia");
+        if (/kwid|mobi|uno|gol|ka|onix|hb20|argo|sandero|celta|clio|march|econ[oô]mico|flex|gnv/.test(text)) profiles.add("Economico");
+        if (/logan|voyage|prisma|onix plus|virtus|cronos|corolla|civic|city|sentra|versa|aplicativo|uber|99|trabalho/.test(text)) profiles.add("Trabalho/Aplicativo");
+        if (/strada|saveiro|montana|toro|s10|hilux|ranger|amarok|frontier|utilit[aá]rio|picape|pickup/.test(text)) profiles.add("Utilitario");
+        if (/autom[aá]tico|cvt|tiptronic|automatica/.test(text)) profiles.add("Automatico");
+        if (/bmw|mercedes|audi|volvo|land rover|lexus|luxo|premium/.test(text)) profiles.add("Luxo");
+        if (km > 0 && km <= 60000) profiles.add("Baixo KM");
+        if (price > 0 && price <= 70000) profiles.add("Primeiro carro");
+        if (price > 0 && price <= 65000) profiles.add("Economico");
+        return [...profiles];
+      }
+
+      function profilesOf(car) {
+        const configured = cleanText(car.perfil_cliente);
+        const inferred = inferredProfiles(car);
+        return configured ? [configured, ...inferred.filter(item => item !== configured)] : inferred;
+      }
+
+      function primaryProfile(car) {
+        return profilesOf(car)[0] || "Perfil sob consulta";
+      }
+
+      function faqItems(car) {
+        const raw = cleanText(car && car.perguntas_frequentes);
+        if (!raw) return [];
+        return raw.split(/\n+/).map(line => {
+          const text = line.trim();
+          if (!text) return null;
+          let question = text;
+          let answer = "";
+          const end = text.indexOf("?");
+          if (end >= 0 && end < text.length - 1) {
+            question = text.slice(0, end + 1).trim();
+            answer = text.slice(end + 1).replace(/^[:\-\s]+/, "").trim();
+          } else {
+            const separator = text.includes("|") ? "|" : text.includes(" - ") ? " - " : text.includes(": ") ? ": " : "";
+            if (separator) {
+              const parts = text.split(separator);
+              question = cleanText(parts.shift());
+              answer = cleanText(parts.join(separator));
+            }
+          }
+          return question ? { question, answer } : null;
+        }).filter(Boolean).slice(0, 10);
+      }
+
+      function shareText(car) {
+        const options = (Array.isArray(car.opcionais) ? car.opcionais : []).slice(0, 8).map(cleanText).filter(Boolean).join(", ");
+        const faqs = faqItems(car).slice(0, 4).map(item => `- ${item.question}${item.answer ? " " + item.answer : ""}`).join("\n");
+        const parts = [
+          `${titleOf(car)} ${cleanText(car.year)}`.trim(),
+          `Perfil: ${primaryProfile(car)}`,
+          `KM: ${car.km ? numberPt(car.km) + " km" : "-"}`,
+          `Cor: ${cleanText(car.color) || "-"}`,
+          `Combustivel: ${cleanText(car.combustivel) || "-"}`,
+          `Opcionais: ${options || "-"}`,
+          `Valor: ${money(car.preco_venda)}`
+        ];
+        if (cleanText(car.ficha_tecnica)) parts.push(`\nFicha tecnica:\n${cleanText(car.ficha_tecnica)}`);
+        if (cleanText(car.descricao_anuncio)) parts.push(`\n${cleanText(car.descricao_anuncio)}`);
+        if (faqs) parts.push(`\nPerguntas frequentes:\n${faqs}`);
+        parts.push("\nTenho interesse nesse veiculo.");
+        return parts.join("\n");
+      }
+
+      function whatsappUrl(car) {
+        const number = whatsappNumber(state.seller);
+        const base = number ? `https://wa.me/${number}` : "https://wa.me/";
+        return `${base}?text=${encodeURIComponent(shareText(car))}`;
+      }
+
+      function resolveSeller() {
+        const params = new URLSearchParams(window.location.search);
+        const reference = cleanText(params.get("colaborador") || params.get("vendedor") || params.get("consultor")).toLowerCase();
+        if (!reference) return null;
+        return state.sellers.find(seller => [seller.id, seller.username, seller.slug].some(value => cleanText(value).toLowerCase() === reference)) || null;
+      }
+
+      function normalizeVehicle(row) {
+        return {
+          id: cleanText(row.id),
+          marca: cleanText(row.marca),
+          name: cleanText(row.name),
+          year: cleanText(row.year),
+          km: Number(row.km) || 0,
+          color: cleanText(row.color),
+          combustivel: cleanText(row.combustivel),
+          opcionais: Array.isArray(row.opcionais) ? row.opcionais.map(cleanText).filter(Boolean).slice(0, 40) : [],
+          preco_venda: Number(row.preco_venda) || 0,
+          status: cleanText(row.status),
+          perfil_cliente: cleanText(row.perfil_cliente),
+          ficha_tecnica: cleanText(row.ficha_tecnica),
+          descricao_anuncio: cleanText(row.descricao_anuncio),
+          perguntas_frequentes: cleanText(row.perguntas_frequentes),
+          fotos: safePhotos(row),
+          videos: Array.isArray(row.videos) ? row.videos : [],
+          updated_at: row.updated_at || row.source_updated_at || null
+        };
+      }
+
+      function filteredVehicles() {
+        const query = state.search.toLocaleLowerCase("pt-BR").trim();
+        return state.vehicles.filter(car => {
+          const haystack = [car.marca, car.name, car.year, car.color, car.combustivel, car.ficha_tecnica, car.descricao_anuncio, car.perguntas_frequentes, car.opcionais.join(" ")].join(" ").toLocaleLowerCase("pt-BR");
+          const queryMatches = !query || haystack.includes(query);
+          const priceMatches = !state.maxPrice || !car.preco_venda || car.preco_venda <= state.maxPrice;
+          const profileMatches = state.profile === "Todos" || profilesOf(car).includes(state.profile);
+          const statusMatches = state.status === "Todos"
+            || state.status === "Prontos" && car.status === "Pronto para Venda"
+            || state.status === "Preparacao" && ["Em Preparação", "Aguardando Aprovação"].includes(car.status)
+            || state.status === "EmBreve" && !["Pronto para Venda", "Em Preparação", "Aguardando Aprovação"].includes(car.status);
+          return queryMatches && priceMatches && profileMatches && statusMatches;
+        }).sort((a, b) => {
+          const statusDifference = statusMeta(a).order - statusMeta(b).order;
+          const aDistance = state.maxPrice && a.preco_venda ? Math.abs(state.maxPrice - a.preco_venda) : Number.MAX_SAFE_INTEGER;
+          const bDistance = state.maxPrice && b.preco_venda ? Math.abs(state.maxPrice - b.preco_venda) : Number.MAX_SAFE_INTEGER;
+          return statusDifference || aDistance - bDistance || b.fotos.length - a.fotos.length || titleOf(a).localeCompare(titleOf(b), "pt-BR");
+        });
+      }
+
+      function addBadge(container, text, className) {
+        container.appendChild(create("span", `badge ${className || ""}`.trim(), text));
+      }
+
+      function renderPhoto(media, car, index, detailMode) {
+        const photos = car.fotos;
+        const safeIndex = photos.length ? ((index % photos.length) + photos.length) % photos.length : 0;
+        media.replaceChildren();
+
+        if (photos.length) {
+          const image = create("img", "vehicle-photo");
+          image.src = photos[safeIndex].url;
+          image.alt = `${titleOf(car)} - foto ${safeIndex + 1}`;
+          image.loading = detailMode ? "eager" : "lazy";
+          image.decoding = "async";
+          media.appendChild(image);
+        } else {
+          media.appendChild(create("div", "photo-fallback", "Foto em atualizacao"));
+        }
+
+        const badges = create("div", "media-badges");
+        const meta = statusMeta(car);
+        addBadge(badges, meta.label, meta.className);
+        if (photos.length > 1) addBadge(badges, `${safeIndex + 1}/${photos.length}`, "photo-count");
+        media.appendChild(badges);
+
+        if (photos.length > 1) {
+          const previous = create("button", "carousel-arrow prev", "‹");
+          previous.type = "button";
+          previous.title = "Foto anterior";
+          previous.setAttribute("aria-label", "Foto anterior");
+          const next = create("button", "carousel-arrow next", "›");
+          next.type = "button";
+          next.title = "Proxima foto";
+          next.setAttribute("aria-label", "Proxima foto");
+          previous.addEventListener("click", event => {
+            event.stopPropagation();
+            detailMode ? moveDetailPhoto(-1) : moveCardPhoto(car.id, -1);
+          });
+          next.addEventListener("click", event => {
+            event.stopPropagation();
+            detailMode ? moveDetailPhoto(1) : moveCardPhoto(car.id, 1);
+          });
+          media.append(previous, next);
+
+          const dots = create("div", "carousel-dots");
+          photos.slice(0, 8).forEach((_, dotIndex) => {
+            dots.appendChild(create("span", `carousel-dot${dotIndex === safeIndex ? " active" : ""}`));
+          });
+          media.appendChild(dots);
+        }
+
+        media.addEventListener("touchstart", event => {
+          const point = event.touches && event.touches[0];
+          if (!point || photos.length < 2) return;
+          if (detailMode) state.detailTouchStart = point.clientX;
+          else state.touchStarts.set(car.id, point.clientX);
+        }, { passive: true });
+        media.addEventListener("touchend", event => {
+          const point = event.changedTouches && event.changedTouches[0];
+          if (!point || photos.length < 2) return;
+          const start = detailMode ? state.detailTouchStart : state.touchStarts.get(car.id);
+          if (typeof start !== "number") return;
+          const delta = point.clientX - start;
+          if (detailMode) state.detailTouchStart = null;
+          else state.touchStarts.delete(car.id);
+          if (Math.abs(delta) > 38) detailMode ? moveDetailPhoto(delta < 0 ? 1 : -1) : moveCardPhoto(car.id, delta < 0 ? 1 : -1);
+        }, { passive: true });
+      }
+
+      function moveCardPhoto(id, direction) {
+        const car = state.vehicles.find(item => item.id === id);
+        if (!car || car.fotos.length < 2) return;
+        const current = state.cardPhotos.get(id) || 0;
+        const next = (current + direction + car.fotos.length) % car.fotos.length;
+        state.cardPhotos.set(id, next);
+        const media = dom.grid.querySelector(`[data-media-id="${CSS.escape(id)}"]`);
+        if (media) renderPhoto(media, car, next, false);
+      }
+
+      function makeCard(car) {
+        const article = create("article", "vehicle-card");
+        const media = create("div", "vehicle-media");
+        media.dataset.mediaId = car.id;
+        media.setAttribute("role", "button");
+        media.tabIndex = 0;
+        media.setAttribute("aria-label", `Ver detalhes de ${titleOf(car)}`);
+        renderPhoto(media, car, state.cardPhotos.get(car.id) || 0, false);
+        media.addEventListener("click", event => {
+          if (event.target.closest("button")) return;
+          openDetail(car.id);
+        });
+        media.addEventListener("keydown", event => {
+          if (event.key === "Enter" || event.key === " ") {
+            event.preventDefault();
+            openDetail(car.id);
+          }
+        });
+
+        const content = create("div", "vehicle-content");
+        const heading = create("div");
+        heading.appendChild(create("div", "vehicle-brand", car.marca || "Premier"));
+        heading.appendChild(create("h2", "vehicle-title", car.name || "Veiculo disponivel"));
+        const facts = [car.year, car.km ? `${numberPt(car.km)} km` : "", car.color, car.combustivel].filter(Boolean).join(" · ");
+        heading.appendChild(create("div", "vehicle-facts", facts || "Dados sob consulta"));
+        content.appendChild(heading);
+        content.appendChild(create("span", "profile-chip", primaryProfile(car)));
+        content.appendChild(create("div", "vehicle-description", car.descricao_anuncio || "Detalhes completos disponiveis na ficha do veiculo."));
+        content.appendChild(create("div", "vehicle-price", money(car.preco_venda)));
+
+        const actions = create("div", "vehicle-actions");
+        const whatsapp = create("button", "action-button primary", "WhatsApp");
+        whatsapp.type = "button";
+        whatsapp.addEventListener("click", () => openWhatsapp(car));
+        const details = create("button", "action-button secondary", "Ver detalhes");
+        details.type = "button";
+        details.addEventListener("click", () => openDetail(car.id));
+        actions.append(whatsapp, details);
+        content.appendChild(actions);
+        article.append(media, content);
+        return article;
+      }
+
+      function renderCatalog() {
+        const list = filteredVehicles();
+        dom.grid.replaceChildren();
+        dom.count.textContent = list.length === 1 ? "1 veiculo encontrado" : `${list.length} veiculos encontrados`;
+        dom.stock.textContent = `${state.vehicles.length} no catalogo`;
+        dom.clearSearch.classList.toggle("visible", Boolean(state.search));
+
+        if (!list.length) {
+          const box = create("div", "state-box");
+          const copy = create("div");
+          copy.appendChild(create("strong", "", "Nenhum veiculo encontrado"));
+          copy.appendChild(document.createTextNode("Ajuste os filtros para ver outras opcoes."));
+          box.appendChild(copy);
+          dom.grid.appendChild(box);
+          return;
+        }
+        const fragment = document.createDocumentFragment();
+        list.forEach(car => fragment.appendChild(makeCard(car)));
+        dom.grid.appendChild(fragment);
+      }
+
+      function appendSpec(container, label, value) {
+        const item = create("div", "spec-item");
+        item.appendChild(create("span", "", label));
+        item.appendChild(create("strong", "", value || "Sob consulta"));
+        container.appendChild(item);
+      }
+
+      function appendSection(container, title, text) {
+        if (!cleanText(text)) return;
+        const section = create("section", "detail-section");
+        section.appendChild(create("h3", "", title));
+        section.appendChild(create("p", "", text));
+        container.appendChild(section);
+      }
+
+      function renderDetail() {
+        const car = state.vehicles.find(item => item.id === state.detailId);
+        if (!car) return;
+        dom.dialogTitle.textContent = titleOf(car);
+        dom.dialogBody.replaceChildren();
+        const layout = create("div", "detail-layout");
+        const media = create("div", "detail-media");
+        media.id = "detail-media";
+        renderPhoto(media, car, state.detailPhoto, true);
+
+        const copy = create("div", "detail-copy");
+        copy.appendChild(create("div", "vehicle-brand", car.marca || "Premier"));
+        copy.appendChild(create("h2", "", car.name || "Veiculo disponivel"));
+        copy.appendChild(create("span", `badge ${statusMeta(car).className}`, statusMeta(car).label));
+        copy.appendChild(create("div", "detail-price", money(car.preco_venda)));
+
+        const specsSection = create("section", "detail-section");
+        specsSection.appendChild(create("h3", "", "Dados principais"));
+        const specs = create("div", "spec-grid");
+        appendSpec(specs, "Ano", car.year);
+        appendSpec(specs, "Quilometragem", car.km ? `${numberPt(car.km)} km` : "");
+        appendSpec(specs, "Cor", car.color);
+        appendSpec(specs, "Combustivel", car.combustivel);
+        appendSpec(specs, "Perfil", primaryProfile(car));
+        appendSpec(specs, "Situacao", statusMeta(car).label);
+        specsSection.appendChild(specs);
+        copy.appendChild(specsSection);
+
+        appendSection(copy, "Sobre este veiculo", car.descricao_anuncio);
+        appendSection(copy, "Ficha tecnica", car.ficha_tecnica);
+
+        if (car.opcionais.length) {
+          const optionSection = create("section", "detail-section");
+          optionSection.appendChild(create("h3", "", "Opcionais"));
+          const options = create("div", "option-list");
+          car.opcionais.forEach(option => options.appendChild(create("span", "option-item", option)));
+          optionSection.appendChild(options);
+          copy.appendChild(optionSection);
+        }
+
+        const faqs = faqItems(car);
+        if (faqs.length) {
+          const faqSection = create("section", "detail-section");
+          faqSection.appendChild(create("h3", "", "Perguntas frequentes"));
+          faqs.forEach(item => {
+            const row = create("div", "faq-item");
+            row.appendChild(create("div", "faq-question", item.question));
+            if (item.answer) row.appendChild(create("div", "faq-answer", item.answer));
+            faqSection.appendChild(row);
+          });
+          copy.appendChild(faqSection);
+        }
+
+        const cta = create("div", "dialog-cta");
+        const whatsapp = create("button", "action-button primary", state.seller ? `Falar com ${state.seller.display_name || state.seller.username || "consultor"}` : "Falar pelo WhatsApp");
+        whatsapp.type = "button";
+        whatsapp.addEventListener("click", () => openWhatsapp(car));
+        cta.appendChild(whatsapp);
+        copy.appendChild(cta);
+        layout.append(media, copy);
+        dom.dialogBody.appendChild(layout);
+      }
+
+      function openDetail(id, pushHistory = true) {
+        if (!state.vehicles.some(car => car.id === id)) return;
+        state.detailId = id;
+        state.detailPhoto = 0;
+        renderDetail();
+        if (!dom.dialog.open) dom.dialog.showModal();
+        if (pushHistory) {
+          const url = new URL(window.location.href);
+          url.hash = `veiculo=${encodeURIComponent(id)}`;
+          history.pushState({ catalogVehicle: id }, "", url);
+        }
+        track("ViewContent", state.vehicles.find(car => car.id === id));
+      }
+
+      function closeDetail(fromHistory) {
+        if (dom.dialog.open) dom.dialog.close();
+        state.detailId = null;
+        state.detailPhoto = 0;
+        if (!fromHistory && window.location.hash.startsWith("#veiculo=")) history.back();
+      }
+
+      function moveDetailPhoto(direction) {
+        const car = state.vehicles.find(item => item.id === state.detailId);
+        if (!car || car.fotos.length < 2) return;
+        state.detailPhoto = (state.detailPhoto + direction + car.fotos.length) % car.fotos.length;
+        const media = document.getElementById("detail-media");
+        if (media) renderPhoto(media, car, state.detailPhoto, true);
+      }
+
+      function track(eventName, car) {
+        const payload = {
+          content_name: car ? titleOf(car) : "Catalogo Premier",
+          content_category: car ? primaryProfile(car) : "Catalogo",
+          seller: state.seller ? state.seller.slug || state.seller.username || state.seller.id : "catalogo-geral"
+        };
+        if (car && car.preco_venda) {
+          payload.value = car.preco_venda;
+          payload.currency = "BRL";
+        }
+        try {
+          if (typeof window.fbq === "function") window.fbq("track", eventName, payload);
+        } catch (_) {}
+      }
+
+      function openWhatsapp(car) {
+        track("Lead", car);
+        window.open(whatsappUrl(car), "_blank", "noopener,noreferrer");
+      }
+
+      function updateSellerUI() {
+        state.seller = resolveSeller();
+        if (state.seller) {
+          const name = cleanText(state.seller.display_name || state.seller.username) || "Consultor Premier";
+          dom.sellerName.textContent = name;
+          dom.sellerBox.hidden = false;
+          dom.sellerHint.textContent = whatsappNumber(state.seller) ? `Atendimento com ${name}` : "Atendimento Premier";
+        } else {
+          dom.sellerBox.hidden = true;
+          dom.sellerHint.textContent = "Atendimento Premier";
+        }
+      }
+
+      function populateProfiles() {
+        const profiles = new Set();
+        state.vehicles.forEach(car => profilesOf(car).forEach(profile => profiles.add(profile)));
+        [...profiles].sort((a, b) => a.localeCompare(b, "pt-BR")).forEach(profile => {
+          const option = create("option", "", profile);
+          option.value = profile;
+          dom.profile.appendChild(option);
+        });
+      }
+
+      function showLoadError(message) {
+        dom.grid.replaceChildren();
+        const box = create("div", "state-box");
+        const copy = create("div");
+        copy.appendChild(create("strong", "", "Catalogo indisponivel no momento"));
+        copy.appendChild(document.createTextNode(message || "Tente novamente em alguns instantes."));
+        box.appendChild(copy);
+        dom.grid.appendChild(box);
+        dom.count.textContent = "Nao foi possivel consultar o estoque";
+        dom.stock.textContent = "Indisponivel";
+      }
+
+      async function loadCatalog() {
+        if (!window.supabase || typeof window.supabase.createClient !== "function") {
+          showLoadError("A conexao segura nao foi carregada.");
+          return;
+        }
+        try {
+          const client = window.supabase.createClient(SUPABASE_URL, SUPABASE_PUBLISHABLE_KEY, {
+            auth: { persistSession: false, autoRefreshToken: false, detectSessionInUrl: false }
+          });
+          const [vehiclesResult, sellersResult] = await Promise.all([
+            client.from("catalog_vehicles").select(VEHICLE_FIELDS).eq("published", true),
+            client.from("catalog_sellers").select(SELLER_FIELDS).eq("active", true)
+          ]);
+          if (vehiclesResult.error) throw vehiclesResult.error;
+          state.vehicles = (vehiclesResult.data || []).map(normalizeVehicle).filter(car => car.id && car.status !== "Vendido");
+          state.sellers = sellersResult.error ? [] : (sellersResult.data || []);
+          updateSellerUI();
+          populateProfiles();
+          renderCatalog();
+          track("PageView");
+
+          const hashId = decodeURIComponent(window.location.hash.replace(/^#veiculo=/, ""));
+          if (window.location.hash.startsWith("#veiculo=") && hashId) openDetail(hashId, false);
+        } catch (error) {
+          console.error("Falha ao carregar catalogo publico", error);
+          showLoadError("Tente novamente em alguns instantes.");
+        }
+      }
+
+      dom.search.addEventListener("input", event => {
+        state.search = event.target.value;
+        renderCatalog();
+      });
+      dom.clearSearch.addEventListener("click", () => {
+        state.search = "";
+        dom.search.value = "";
+        dom.search.focus();
+        renderCatalog();
+      });
+      dom.price.addEventListener("input", event => {
+        state.maxPrice = Math.max(0, Number(event.target.value) || 0);
+        renderCatalog();
+      });
+      dom.profile.addEventListener("change", event => {
+        state.profile = event.target.value;
+        renderCatalog();
+      });
+      dom.tabs.addEventListener("click", event => {
+        const button = event.target.closest("[data-status]");
+        if (!button) return;
+        state.status = button.dataset.status;
+        dom.tabs.querySelectorAll(".status-tab").forEach(tab => tab.classList.toggle("active", tab === button));
+        renderCatalog();
+      });
+      dom.reset.addEventListener("click", () => {
+        state.search = "";
+        state.maxPrice = 0;
+        state.profile = "Todos";
+        state.status = "Todos";
+        dom.search.value = "";
+        dom.price.value = "";
+        dom.profile.value = "Todos";
+        dom.tabs.querySelectorAll(".status-tab").forEach(tab => tab.classList.toggle("active", tab.dataset.status === "Todos"));
+        renderCatalog();
+      });
+      dom.closeDialog.addEventListener("click", () => closeDetail(false));
+      dom.dialog.addEventListener("cancel", event => {
+        event.preventDefault();
+        closeDetail(false);
+      });
+      dom.dialog.addEventListener("click", event => {
+        if (event.target === dom.dialog) closeDetail(false);
+      });
+      window.addEventListener("popstate", () => {
+        const hasVehicleHash = window.location.hash.startsWith("#veiculo=");
+        if (!hasVehicleHash) {
+          closeDetail(true);
+          return;
+        }
+        const id = decodeURIComponent(window.location.hash.replace(/^#veiculo=/, ""));
+        if (id) openDetail(id, false);
+      });
+
+      loadCatalog();
+    })();
+  </script>
+</body>
+</html>
